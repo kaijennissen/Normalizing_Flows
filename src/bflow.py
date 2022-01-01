@@ -5,13 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.interpolate as I
 import seaborn as sns
-from bernstein_flow.bijectors import BernsteinBijector
-from bernstein_flow.distributions import BernsteinFlow
-from jax import grad, jacfwd, value_and_grad
-from jax._src.api import jacfwd
+from distrax._src.distributions.distribution import PRNGKey
+from jax import random
 from jax.nn import sigmoid, softmax, softplus
-from jax.random import PRNGKey
-from scipy.interpolate import BPoly
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions
@@ -22,27 +18,6 @@ def get_beta_dists(order):
     alpha = [x for x in range(1, order + 1)]
     beta = alpha[::-1]
     return tfd.Beta(alpha, beta)
-
-
-def get_beta_dists_derivative(order):
-    alpha = [x for x in range(1, order)]
-    beta = alpha[::-1]
-    return tfd.Beta(alpha, beta)
-
-
-def get_bernstein_poly_jac(theta):
-    theta_shape = theta.shape
-    order = theta_shape[-1]
-
-    beta_dist_h_dash = get_beta_dists_derivative(order)
-
-    def bernstein_poly_jac(y):
-        by = beta_dist_h_dash.prob(y[..., jnp.newaxis])
-        dtheta = theta[..., 1:] - theta[..., 0:-1]
-        dz_dy = jnp.sum(by * dtheta, axis=-1)
-        return dz_dy
-
-    return bernstein_poly_jac
 
 
 def get_bernstein_poly(theta):
@@ -59,6 +34,27 @@ def get_bernstein_poly(theta):
         return z
 
     return bernstein_poly
+
+
+def get_beta_dists_derivative(order):
+    alpha = [x for x in range(1, order)]
+    beta = alpha[::-1]
+    return tfd.Beta(alpha, beta)
+
+
+def get_bernstein_poly_jac(theta):
+    theta_shape = theta.shape
+    order = theta_shape[-1]
+
+    beta_dist_der = get_beta_dists_derivative(order)
+
+    def bernstein_poly_jac(y):
+        by = beta_dist_der.prob(y[..., jnp.newaxis])
+        dtheta = theta[..., 1:] - theta[..., 0:-1]
+        dz_dy = jnp.sum(by * dtheta, axis=-1)
+        return dz_dy
+
+    return bernstein_poly_jac
 
 
 def constrain_thetas(theta_unconstrained, fn=softplus):
@@ -145,7 +141,7 @@ c = [
 
 a = jnp.array([6.0], dtype=np.float32)
 b = jnp.array([-3.0], dtype=np.float32)
-theta = jnp.array([-2.0, 2, 3, -7, -7, -7, -7, -7, 7])
+theta = jnp.array([-2.5, 2, 3, -7, -7, -7, -7, -7, 7])
 alpha = jnp.array([0.2], dtype=np.float32)
 beta = jnp.array([-2.50], dtype=np.float32)
 
@@ -163,38 +159,39 @@ chained_bijectors = [T4, T3, T2, T1]
 
 bij = distrax.Inverse(distrax.Chain(chained_bijectors))
 
-z = np.random.normal(size=1000)
-# breakpoint()
-# jac = grad(T3.forward)(0.5)
-# y, logdet = T3.forward_and_log_det(0.5)
+z = np.random.normal(size=100000)
 y = bij.forward(z)
-sns.distplot(y)
-plt.show()
+# sns.distplot(y)
+# plt.show()
 
 # raise ValueError()
 
 n = 500
 cols = len(chained_bijectors) + 1
-z_samples = np.linspace(-3, 3, n).astype(np.float32)
+z_samples = np.linspace(-3, 3, n)
 base_dist = distrax.Normal(0, 1)
-fig, ax = plt.subplots(1, cols, figsize=(4 * cols, 4))
+fig, ax = plt.subplots(1, cols, figsize=(4 * cols, 8))
 
 ildj = 0.0
 log_probs = base_dist.log_prob(z_samples)
 ax[0].plot(z_samples, np.exp(log_probs))
+ax[0].set_title("Normal (0, 1)")
 zz = z_samples
 
+names = ["Shift and Scale", "Bernstein-Polynom", "SoftClip", "Shift and Scale"]
 ildj = 0.0
 for i, (ax, bij) in enumerate(zip(ax[1:], chained_bijectors)):
     # we need to use the inverse here since we are going from z->y!
     z = bij.inverse(zz)
     ildj += bij.forward_log_det_jacobian(z)
     ax.plot(z, np.exp(log_probs + ildj))
-    # ax.set_title(b.name.replace("_", " "))
+    ax.set_title(names[i])
     ax.set_xlabel(f"$z_{i}$")
     ax.set_ylabel(f"$p(z_{i+1})$")
     zz = z
 plt.show()
+plt.savefig("Bernstein_Flow.jpg")
+plt.close()
 
 
 def plot_poly(theta):
@@ -208,3 +205,36 @@ def plot_poly(theta):
     plt.plot(yyy, zi, alpha=0.5)
     plt.title("Jax-Version")
     plt.show()
+
+
+key = jax.random.PRNGKey(1234)
+mu = jnp.array([0.0, 0.0])
+sigma = jnp.array([1.0, 1.0])
+
+dist_distrax = distrax.MultivariateNormalDiag(mu, sigma)
+dist_tfp = tfd.MultivariateNormalDiag(mu, sigma)
+bij = distrax.Block(distrax.Inverse(distrax.Sigmoid()), ndims=1)
+
+dist_transformed = distrax.Transformed(dist_distrax, bij)
+
+samples = dist_distrax.sample(seed=key, sample_shape=(100,))
+
+
+x1 = np.linspace(-4, 4, 200)
+x2 = np.linspace(-4, 4, 200)
+X1, X2 = np.meshgrid(x1, x2)
+Y = dist_distrax.log_prob(np.stack([X1, X2], axis=-1))
+Z = dist_transformed.log_prob(np.stack([X1, X2], axis=-1))
+
+fig, ax = plt.subplots(1, 2, figsize=(8, 8))
+cm = plt.cm.get_cmap("viridis")
+ax[0].scatter(X1, X2, c=np.exp(Y), cmap=cm)
+ax[1].scatter(X1, X2, c=np.exp(Z), cmap=cm)
+plt.show()
+
+
+# cp = plt.contour(X1, X2, Y, levels=30)
+# plt.clabel(cp, inline=1, fontsize=10)
+# plt.xlabel("X1")
+# plt.ylabel("X2")
+# plt.show()
