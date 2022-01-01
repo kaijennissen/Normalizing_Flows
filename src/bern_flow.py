@@ -1,8 +1,34 @@
+import matplotlib.pyplot as plt
+import numpy as np
 from bernstein_flow.bijectors import BernsteinBijector
 from bernstein_flow.distributions import BernsteinFlow
-import numpy as np
-from bernstein_flow.util.visualization import plot_chained_bijectors
-import matplotlib.pyplot as plt
+
+
+def plot_chained_bijectors(flow):
+    chained_bijectors = flow.bijector.bijector.bijectors
+    base_dist = flow.distribution
+    cols = len(chained_bijectors) + 1
+    fig, ax = plt.subplots(1, cols, figsize=(4 * cols, 4))
+
+    n = 200
+
+    z_samples = np.linspace(-3, 3, n).astype(np.float32)
+    log_probs = base_dist.log_prob(z_samples)
+
+    ax[0].plot(z_samples, np.exp(log_probs))
+
+    zz = z_samples[..., None]
+    ildj = 0.0
+    for i, (a, b) in enumerate(zip(ax[1:], chained_bijectors)):
+        # we need to use the inverse here since we are going from z->y!
+        z = b.inverse(zz)
+        ildj += b.forward_log_det_jacobian(z, 1)
+        a.plot(z, np.exp(log_probs + ildj))
+        a.set_title(b.name.replace("_", " "))
+        a.set_xlabel(f"$z_{i}$")
+        a.set_ylabel(f"$p(z_{i+1})$")
+        zz = z
+    fig.tight_layout()
 
 
 a = np.array([6.0], dtype=np.float32)
