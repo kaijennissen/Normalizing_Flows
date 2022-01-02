@@ -1,7 +1,8 @@
 # Bernstein Flows
-
+### Univariate
 ![Bernstein Flow](./plots/Bernstein_Flow.jpg)
-![Bernstein Flow](./plots/Density_MVN.jpg)
+### Independent Multivariate
+![Bernstein Flow](./plots/MVN_3D.jpg)
 
 ## Reference
 - [Deep transformation models: Tackling complex regression problems with neural network based transformation models](https://arxiv.org/pdf/2004.00464.pdf) Beate Sick, Torsten Hothorn, Oliver Dürr
