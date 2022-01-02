@@ -139,21 +139,20 @@ c = [
 # plt.show()
 
 
-a = jnp.array([6.0], dtype=np.float32)
-b = jnp.array([-3.0], dtype=np.float32)
+T1 = distrax.Chain([tfb.Scale(1), tfb.Shift(0)])
+T2 = distrax.Inverse(distrax.Tanh())
+T3 = distrax.Chain([tfb.Scale(0.9), tfb.Shift(0)])
+chained_bijectors = [T3, T2]
+
+a = jnp.array([2.0], dtype=np.float32)
+b = jnp.array([-0.1], dtype=np.float32)
 theta = jnp.array([-2.5, 2, 3, -7, -7, -7, -7, -7, 7])
 alpha = jnp.array([0.2], dtype=np.float32)
 beta = jnp.array([-2.50], dtype=np.float32)
 
-# T1 = distrax.Chain([tfb.Scale(2), tfb.Shift(2)])
-# T2 = distrax.Inverse(distrax.Tanh())
-# T3 = distrax.Chain([tfb.Scale(0.8), tfb.Shift(0)])
-# chained_bijectors = [T3, T2, T1]
-
 T1 = distrax.Chain([tfb.Scale(softplus(a)), tfb.Shift(b)])
 T2 = tfb.SoftClip(low=0, high=1, hinge_softness=1.5)
 T3 = Bernstein_Bijector(thetas=constrain_thetas(theta))
-# T3 = Bernstein_Bijector(thetas=theta)
 T4 = distrax.Chain([tfb.Scale(softplus(alpha)), tfb.Shift(beta)])
 chained_bijectors = [T4, T3, T2, T1]
 
@@ -161,19 +160,20 @@ bij = distrax.Inverse(distrax.Chain(chained_bijectors))
 
 z = np.random.normal(size=100000)
 y = bij.forward(z)
-# sns.distplot(y)
+sns.distplot(y)
 # plt.show()
+plt.close()
 
 # raise ValueError()
 
 n = 500
 cols = len(chained_bijectors) + 1
 z_samples = np.linspace(-3, 3, n)
-base_dist = distrax.Normal(0, 1)
+dist_base = distrax.Normal(0, 1)
 fig, ax = plt.subplots(1, cols, figsize=(4 * cols, 8))
 
 ildj = 0.0
-log_probs = base_dist.log_prob(z_samples)
+log_probs = dist_base.log_prob(z_samples)
 ax[0].plot(z_samples, np.exp(log_probs))
 ax[0].set_title("Normal (0, 1)")
 zz = z_samples
@@ -189,8 +189,8 @@ for i, (ax, bij) in enumerate(zip(ax[1:], chained_bijectors)):
     ax.set_xlabel(f"$z_{i}$")
     ax.set_ylabel(f"$p(z_{i+1})$")
     zz = z
-plt.show()
-plt.savefig("Bernstein_Flow.jpg")
+plt.savefig("./plots/Bernstein_Flow.jpg")
+# plt.show()
 plt.close()
 
 
@@ -207,34 +207,83 @@ def plot_poly(theta):
     plt.show()
 
 
+# Univariate
 key = jax.random.PRNGKey(1234)
-mu = jnp.array([0.0, 0.0])
-sigma = jnp.array([1.0, 1.0])
+mu = 0.0
+sigma = 1.0
+dist_base = distrax.Normal(loc=mu, scale=sigma)
+bij = distrax.Inverse(distrax.Chain(chained_bijectors))
+dist_transformed = distrax.Transformed(dist_base, bij)
 
-dist_distrax = distrax.MultivariateNormalDiag(mu, sigma)
-dist_tfp = tfd.MultivariateNormalDiag(mu, sigma)
-bij = distrax.Block(distrax.Inverse(distrax.Sigmoid()), ndims=1)
+x1 = np.linspace(-3, 3, 200)
+Y = dist_base.log_prob(x1)
+# z = bij.inverse(x1)
+# Z = dist_base.log_prob(z) + bij.forward_log_det_jacobian(z)
+Z = dist_transformed.log_prob(x1)
 
-dist_transformed = distrax.Transformed(dist_distrax, bij)
+fig, ax = plt.subplots(1, 2, figsize=(8, 8))
+cm = plt.cm.get_cmap("viridis")
+ax[0].plot(x1, np.exp(Y))
+ax[1].plot(x1, np.exp(Z))
+# plt.show()
+plt.close()
 
-samples = dist_distrax.sample(seed=key, sample_shape=(100,))
+# Independent Multivariate
+key = jax.random.PRNGKey(1234)
+mu = 0.0
+sigma = 1.0
+dist_base = distrax.Normal(loc=mu, scale=sigma)
+bij = distrax.Inverse(distrax.Chain(chained_bijectors))
+dist_transformed = distrax.Transformed(dist_base, bij)
 
-
-x1 = np.linspace(-4, 4, 200)
-x2 = np.linspace(-4, 4, 200)
+x1 = np.linspace(-3, 3, 400)
+x2 = np.linspace(-3, 3, 400)
 X1, X2 = np.meshgrid(x1, x2)
-Y = dist_distrax.log_prob(np.stack([X1, X2], axis=-1))
-Z = dist_transformed.log_prob(np.stack([X1, X2], axis=-1))
+Y = dist_base.log_prob(X1) + dist_base.log_prob(X2)
+Z = dist_transformed.log_prob(X1) + dist_transformed.log_prob(X2)
 
 fig, ax = plt.subplots(1, 2, figsize=(8, 8))
 cm = plt.cm.get_cmap("viridis")
 ax[0].scatter(X1, X2, c=np.exp(Y), cmap=cm)
 ax[1].scatter(X1, X2, c=np.exp(Z), cmap=cm)
-plt.show()
-
-
-# cp = plt.contour(X1, X2, Y, levels=30)
-# plt.clabel(cp, inline=1, fontsize=10)
-# plt.xlabel("X1")
-# plt.ylabel("X2")
 # plt.show()
+plt.close()
+
+
+fig, ax = plt.subplots(1, 2, figsize=(14, 8))
+ax[0].contourf(X1, X2, np.exp(Y))
+ax[0].set_xlabel("x1")
+ax[0].set_ylabel("x2")
+ax[0].set_title("Base Distribution")
+ax[1].contourf(X1, X2, np.exp(Z))
+ax[1].set_xlabel("x1")
+ax[1].set_ylabel("x2")
+ax[1].set_title("Transformed Distribution")
+plt.savefig("./plots/Density_MVN.jpg")
+plt.close()
+# Multivariate
+key = jax.random.PRNGKey(1234)
+mu = jnp.zeros(2)
+sigma = jnp.ones(2)
+dist_base = distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma)
+bij = distrax.Block(distrax.Inverse(distrax.Chain(chained_bijectors)), ndims=1)
+dist_transformed = distrax.Transformed(dist_base, bij)
+
+x1 = np.linspace(-3, 3, 400)
+x2 = np.linspace(-3, 3, 400)
+X1, X2 = np.meshgrid(x1, x2)
+Y = dist_base.log_prob(np.stack([X1, X2], axis=-1))
+Z = dist_transformed.log_prob(np.stack([X1, X2], axis=-1))
+
+
+fig, ax = plt.subplots(1, 2, figsize=(14, 8))
+ax[0].contourf(X1, X2, np.exp(Y))
+ax[0].set_xlabel("x1")
+ax[0].set_ylabel("x2")
+ax[0].set_title("Base Distribution")
+ax[1].contourf(X1, X2, np.exp(Z))
+ax[1].set_xlabel("x1")
+ax[1].set_ylabel("x2")
+ax[1].set_title("Transformed Distribution")
+
+plt.savefig("./plots/MVN.jpg")
