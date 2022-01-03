@@ -1,81 +1,108 @@
+import distrax
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-from bernstein_flow.bijectors import BernsteinBijector
-from bernstein_flow.distributions import BernsteinFlow
+import scipy.interpolate as I
+import seaborn as sns
+from distrax._src.distributions.distribution import PRNGKey
+from jax import random
+from jax.nn import sigmoid, softmax, softplus
+from tensorflow_probability.substrates import jax as tfp
+
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 
-def plot_chained_bijectors(flow):
-    chained_bijectors = flow.bijector.bijector.bijectors
-    base_dist = flow.distribution
-    cols = len(chained_bijectors) + 1
-    fig, ax = plt.subplots(1, cols, figsize=(4 * cols, 4))
-
-    n = 200
-
-    z_samples = np.linspace(-3, 3, n).astype(np.float32)
-    log_probs = base_dist.log_prob(z_samples)
-
-    ax[0].plot(z_samples, np.exp(log_probs))
-
-    zz = z_samples[..., None]
-    ildj = 0.0
-    for i, (a, b) in enumerate(zip(ax[1:], chained_bijectors)):
-        # we need to use the inverse here since we are going from z->y!
-        z = b.inverse(zz)
-        ildj += b.forward_log_det_jacobian(z, 1)
-        a.plot(z, np.exp(log_probs + ildj))
-        a.set_title(b.name.replace("_", " "))
-        a.set_xlabel(f"$z_{i}$")
-        a.set_ylabel(f"$p(z_{i+1})$")
-        zz = z
-    fig.tight_layout()
+def get_beta_dists(order):
+    alpha = [x for x in range(1, order + 1)]
+    beta = alpha[::-1]
+    return tfd.Beta(alpha, beta)
 
 
-a = np.array([6.0], dtype=np.float32)
-b = np.array([-3.0], dtype=np.float32)
-theta = np.array([-2.0, 2.0, 3.0, -7.0, -7.0, -7.0, -7.0, -7.0, 7.0], dtype=np.float32)
-alpha = np.array([0.2], dtype=np.float32)
-beta = np.array([-2.50], dtype=np.float32)
+def get_bernstein_poly(theta):
+    theta_shape = theta.shape
+    order = theta_shape[-1]
+    batch_shape = theta_shape[:-1]
+    beta_dists = get_beta_dists(order)
 
-flow = BernsteinFlow(np.concatenate([a, -b, theta, alpha, -beta]))
-plot_chained_bijectors(flow)
-plt.show()
-yy = np.linspace(0, 1, 200, dtype=np.float32)
-bs = flow.bijector  # .bijector.bijectors[2]
-zz = bs.forward(yy)
-plt.figure(figsize=(8, 8))
-plt.plot(yy, zz)
-plt.show()
+    def bernstein_poly(x):
+        sample_shape = x.shape
+        bx = beta_dists.prob(x[..., jnp.newaxis])
+        z = jnp.mean(bx * theta, axis=-1)
 
+        return z
 
-theta = np.array(
-    [
-        -1.0744555,
-        -0.6429366,
-        -0.44160688,
-        0.7950939,
-        1.9249767,
-        2.1408765,
-        2.4256434,
-        3.1641612,
-        3.3939004,
-    ],
-    dtype=np.float32,
-)
-bs = BernsteinBijector(theta=theta)
-yy = np.linspace(0, 1, 200, dtype=np.float32)
-zz = bs.forward(yy)
-# Prevent caching -> use spline interpolation
-zi = zz + 1e-15 * np.random.random(zz.shape)
-yyy = bs.inverse(zi)
-
-plt.figure(figsize=(8, 8))
-plt.plot(yy, zz, alpha=0.5)
-plt.plot(yyy, zi, alpha=0.5)
-plt.title("Tensorflow-Version")
-plt.show()
+    return bernstein_poly
 
 
-print(
-    f"The MSE of the interpolation in this example is {np.sum((np.squeeze(yyy)-yy)**2):.3e}$."
-)
+def get_beta_dists_derivative(order):
+    alpha = [x for x in range(1, order)]
+    beta = alpha[::-1]
+    return tfd.Beta(alpha, beta)
+
+
+def get_bernstein_poly_jac(theta):
+    theta_shape = theta.shape
+    order = theta_shape[-1]
+
+    beta_dist_der = get_beta_dists_derivative(order)
+
+    def bernstein_poly_jac(y):
+        by = beta_dist_der.prob(y[..., jnp.newaxis])
+        dtheta = theta[..., 1:] - theta[..., 0:-1]
+        dz_dy = jnp.sum(by * dtheta, axis=-1)
+        return dz_dy
+
+    return bernstein_poly_jac
+
+
+def constrain_thetas(theta_unconstrained, fn=softplus):
+
+    d = jnp.concatenate(
+        (
+            jnp.zeros_like(theta_unconstrained[..., :1]),
+            theta_unconstrained[..., :1],
+            fn(theta_unconstrained[..., 1:]) + 1e-4,
+        ),
+        axis=-1,
+    )
+    return jnp.cumsum(d[..., 1:], axis=-1)
+
+
+class BernsteinBijector(distrax.Bijector):
+    def __init__(self, thetas):
+        super().__init__(event_ndims_in=0, event_ndims_out=0)
+        self.thetas = thetas
+        self._is_injective = True
+
+    def _forward(self, x):
+        bernstein_poly = get_bernstein_poly(self.thetas)
+        clip = 1e-7
+        x = jnp.clip(x, clip, 1.0 - clip)
+        return bernstein_poly(x)
+
+    def _forward_log_det(self, x):
+        bernstein_poly = get_bernstein_poly_jac(self.thetas)
+        clip = 1e-7
+        x = jnp.clip(x, clip, 1.0 - clip)
+        return jnp.log(bernstein_poly(x))
+
+    def forward_log_det_jacobian(self, x):
+        return self._forward_log_det(x)
+
+    def inverse(self, x):
+        n_points = 200
+        clip = 1e-7
+        x_fit = jnp.linspace(clip, 1 - clip, n_points)
+        y_fit = self._forward(x_fit)
+        # y_max = jnp.max(y_fit)
+        # y_min = jnp.min(y_fit)
+        # x = jnp.clip(x, y_min, y_max)
+        yp = jnp.interp(x, y_fit, x_fit)
+        return yp
+
+    def forward_and_log_det(self, x):
+        y = self._forward(x)
+        logdet = self._forward_log_det(x)
+        return y, logdet
