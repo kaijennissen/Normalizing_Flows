@@ -1,0 +1,19 @@
+name: nflows
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python~=3.8.0
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - pre-commit
+  - black==21.12b0
+  - isort==5.10.1
+  - mypy
+  - pylama
+  - jax
+  - pip
+  - pip:
+    - distrax

@@ -13,26 +13,12 @@ from BernsteinBijector import BernsteinBijector, constrain_thetas
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
-
-theta = jnp.array(
-    [
-        -1.0744555,
-        -0.6429366,
-        -0.44160688,
-        0.7950939,
-        1.9249767,
-        2.1408765,
-        2.4256434,
-        3.1641612,
-        3.3939004,
-    ]
-)
-
 # T1 = distrax.Chain([tfb.Scale(1), tfb.Shift(0)])
 # T2 = distrax.Inverse(distrax.Tanh())
 # T3 = distrax.Chain([tfb.Scale(0.9), tfb.Shift(0)])
 # chained_bijectors = [T3, T2]
 
+# Parameters for the BernsteinBijector
 a = jnp.array([2.0], dtype=np.float32)
 b = jnp.array([-0.1], dtype=np.float32)
 theta = jnp.array([-2.5, 2, 3, -7, -7, -7, -7, -7, 7])
@@ -47,14 +33,7 @@ chained_bijectors = [T4, T3, T2, T1]
 
 bij = distrax.Inverse(distrax.Chain(chained_bijectors))
 
-z = np.random.normal(size=100000)
-y = bij.forward(z)
-sns.distplot(y)
-# plt.show()
-plt.close()
-
-# raise ValueError()
-
+# Plot change in density
 n = 500
 cols = len(chained_bijectors) + 1
 z_samples = np.linspace(-3, 3, n)
@@ -106,8 +85,6 @@ dist_transformed = distrax.Transformed(dist_base, bij)
 
 x1 = np.linspace(-3, 3, 200)
 Y = dist_base.log_prob(x1)
-# z = bij.inverse(x1)
-# Z = dist_base.log_prob(z) + bij.forward_log_det_jacobian(z)
 Z = dist_transformed.log_prob(x1)
 
 fig, ax = plt.subplots(1, 2, figsize=(8, 8))
@@ -138,7 +115,6 @@ ax[1].scatter(X1, X2, c=Z, cmap=cm)
 # plt.show()
 plt.close()
 
-
 fig, ax = plt.subplots(1, 2, figsize=(14, 8))
 ax[0].contourf(X1, X2, Y)
 ax[0].set_xlabel("x1")
@@ -150,8 +126,8 @@ ax[1].set_ylabel("x2")
 ax[1].set_title("Transformed Distribution")
 plt.savefig("./plots/Density_MVN.jpg")
 plt.close()
+
 # Multivariate
-key = jax.random.PRNGKey(1234)
 mu = jnp.zeros(2)
 sigma = jnp.ones(2)
 dist_base = distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma)
@@ -161,36 +137,9 @@ dist_transformed = distrax.Transformed(dist_base, bij)
 x1 = np.linspace(-3, 3, 600)
 x2 = np.linspace(-3, 3, 600)
 X1, X2 = np.meshgrid(x1, x2)
-Y = np.exp(dist_base.log_prob(np.stack([X1, X2], axis=-1)))
-Z = np.exp(dist_transformed.log_prob(np.stack([X1, X2], axis=-1)))
-
-cm = plt.cm.get_cmap("inferno")
-fig = plt.figure(figsize=(14, 8))
-fig.suptitle("Density Plots")
-# upper left
-ax = fig.add_subplot(221)
-ax.contourf(X1, X2, Y, cmap=cm)
-ax.set_xlabel("x1")
-ax.set_ylabel("x2")
-ax.set_title("Base Distribution")
-
-# upper right
-ax = fig.add_subplot(222)
-ax.contourf(X1, X2, Z, cmap=cm)
-ax.set_xlabel("x1")
-ax.set_ylabel("x2")
-ax.set_title("Transformed Distribution")
-
-# lower right
-ax = fig.add_subplot(223, projection="3d")
-ax.plot_surface(X1, X2, Y, cmap=cm)
-
-# lower left
-ax = fig.add_subplot(224, projection="3d")
-ax.plot_surface(X1, X2, Z, cmap=cm)
-
-plt.savefig("./plots/MVN.jpg")
-plt.close()
+X = np.stack([X1, X2], axis=-1)
+Y = np.exp(dist_base.log_prob(X))
+Z = np.exp(dist_transformed.log_prob(X))
 
 cm = plt.cm.get_cmap("viridis")
 fig = plt.figure(figsize=(12, 6))
@@ -219,3 +168,73 @@ ax.view_init(elev=20, azim=-45)
 ax.grid(False)
 fig.tight_layout(pad=3, w_pad=0.1)
 plt.savefig("./plots/MVN_3D.jpg", dpi=600)
+
+# Rotaton Flow
+class Rotaton2D(distrax.Bijector):
+    def __init__(self, theta):
+        super().__init__(event_ndims_in=1, event_ndims_out=1)
+        self.thetas = theta
+        self.sin_theta = jnp.sin(theta)
+        self.cos_theta = jnp.cos(theta)
+        self.R = jnp.array(
+            [[self.cos_theta, -self.sin_theta], [self.sin_theta, self.cos_theta]]
+        ).T
+
+    def forward(self, x):
+        return jnp.matmul(x, self.R)
+
+    def inverse(self, x):
+        return jnp.matmul(x, self.R.T)
+
+    def forward_and_log_det(self, x):
+        y = self.forward(x)
+        logdet = 1
+        return y, logdet
+
+    def inverse_and_log_det(self, x):
+        y = self.inverse(x)
+        logdet = 1
+        return y, logdet
+
+
+mu = jnp.zeros(2)
+sigma = jnp.ones(2)
+dist_base = distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma)
+bij = Rotaton2D(theta=np.pi / 4)
+dist_transformed = distrax.Transformed(dist_base, bij)
+
+x1 = np.linspace(-3, 3, 600)
+x2 = np.linspace(-3, 3, 600)
+X1, X2 = np.meshgrid(x1, x2)
+X = np.stack([X1, X2], axis=-1)
+Y = np.exp(dist_base.log_prob(X))
+Z = np.exp(dist_transformed.log_prob(X))
+
+cm = plt.cm.get_cmap("viridis")
+fig = plt.figure(figsize=(12, 6))
+ax = fig.add_subplot(121, projection="3d")
+surf = ax.plot_surface(X1, X2, Y, rstride=8, cstride=8, alpha=0.9, cmap=cm)
+cset = ax.contourf(X1, X2, Y, zdir="z", offset=-0.3, cmap=cm)
+cset = ax.contourf(X1, X2, Y, zdir="x", offset=-5, cmap=cm)
+cset = ax.contourf(X1, X2, Y, zdir="y", offset=-5, cmap=cm)
+ax.set_zlim(-0.3, np.max(Y) * 1.4)
+ax.set_xlabel(r"$x_{2}$")
+ax.set_ylabel(r"$x_{1}$")
+ax.set_zlabel(r"$f(x_{1},x_{2})$")
+ax.view_init(elev=20, azim=45)
+ax.grid(False)
+ax = fig.add_subplot(122, projection="3d")
+surf = ax.plot_surface(X1, X2, Z, rstride=8, cstride=8, alpha=0.9, cmap=cm)
+cset = ax.contourf(X1, X2, Z, zdir="z", offset=-0.6, cmap=cm)
+cset = ax.contourf(X1, X2, Z, zdir="x", offset=-5, cmap=cm)
+cset = ax.contourf(X1, X2, Z, zdir="y", offset=5, cmap=cm)
+ax.set_zlim(-0.6, np.max(Z) * 1.35)
+ax.set_xlabel(r"$x_{1}$")
+ax.set_ylabel(r"$x_{2}$")
+ax.set_zlabel(r"$g(x_{1},x_{2})$")
+
+ax.view_init(elev=20, azim=-45)
+ax.grid(False)
+fig.tight_layout(pad=3, w_pad=0.1)
+plt.show()
+plt.savefig("./plots/MVN_3D_rotation.jpg", dpi=600)

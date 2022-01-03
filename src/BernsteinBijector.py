@@ -96,9 +96,6 @@ class BernsteinBijector(distrax.Bijector):
         clip = 1e-7
         x_fit = jnp.linspace(clip, 1 - clip, n_points)
         y_fit = self._forward(x_fit)
-        # y_max = jnp.max(y_fit)
-        # y_min = jnp.min(y_fit)
-        # x = jnp.clip(x, y_min, y_max)
         yp = jnp.interp(x, y_fit, x_fit)
         return yp
 
