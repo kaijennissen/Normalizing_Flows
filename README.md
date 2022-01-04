@@ -6,7 +6,7 @@
 import distrax
 import jax.numpy as jnp
 
-class Rotaton2D(distrax.Bijector):
+class OrthogonalProjection2D(distrax.Bijector):
     def __init__(self, theta):
         super().__init__(event_ndims_in=1, event_ndims_out=1)
         self.thetas = theta

@@ -15,7 +15,7 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 # Rotaton Flow
-class Rotaton2D(distrax.Bijector):
+class OrthogonalProjection2D(distrax.Bijector):
     def __init__(self, theta):
         super().__init__(event_ndims_in=1, event_ndims_out=1)
         self.thetas = theta
@@ -53,7 +53,7 @@ theta = jax.random.uniform(keys[2], minval=0.0, maxval=2.0 * jnp.pi)
 
 T1 = distrax.Block(tfb.Scale(a), ndims=1)
 T2 = distrax.Block(tfb.Shift(b), ndims=1)
-T3 = Rotaton2D(theta=theta)
+T3 = OrthogonalProjection2D(theta=theta)
 T4 = distrax.Block(tfb.Log(), ndims=1)
 bij = distrax.Chain([T4, T3, T2, T1])
 
