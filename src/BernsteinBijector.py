@@ -75,7 +75,7 @@ class BernsteinBijector(distrax.Bijector):
 
     def __init__(self, thetas):
         super().__init__(event_ndims_in=0)
-        self.thetas = thetas
+        self.thetas = constrain_thetas(thetas)
 
     def forward(self, x):
         """Computes y = f(x)."""
