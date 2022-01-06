@@ -71,35 +71,37 @@ def constrain_thetas(theta_unconstrained, fn=softplus):
 
 
 class BernsteinBijector(distrax.Bijector):
-    def __init__(self, thetas):
-        super().__init__(event_ndims_in=0, event_ndims_out=0)
-        self.thetas = thetas
-        self._is_injective = True
+    """Initializes a Bernstein bijector."""
 
-    def _forward(self, x):
+    def __init__(self, thetas):
+        super().__init__(event_ndims_in=0)
+        self.thetas = thetas
+
+    def forward(self, x):
+        """Computes y = f(x)."""
         bernstein_poly = get_bernstein_poly(self.thetas)
         clip = 1e-7
         x = jnp.clip(x, clip, 1.0 - clip)
         return bernstein_poly(x)
 
-    def _forward_log_det(self, x):
+    def forward_log_det_jacobian(self, x):
+        """Computes log|det J(f)(x)|."""
         bernstein_poly = get_bernstein_poly_jac(self.thetas)
         clip = 1e-7
         x = jnp.clip(x, clip, 1.0 - clip)
         return jnp.log(bernstein_poly(x))
 
-    def forward_log_det_jacobian(self, x):
-        return self._forward_log_det(x)
-
-    def inverse(self, x):
+    def inverse(self, y):
+        """Computes x = f^{-1}(y)."""
         n_points = 200
         clip = 1e-7
         x_fit = jnp.linspace(clip, 1 - clip, n_points)
-        y_fit = self._forward(x_fit)
-        yp = jnp.interp(x, y_fit, x_fit)
-        return yp
+        y_fit = self.forward(x_fit)
+        x = jnp.interp(y, y_fit, x_fit)
+        return x
 
     def forward_and_log_det(self, x):
-        y = self._forward(x)
-        logdet = self._forward_log_det(x)
+        """Computes y = f(x) and log|det J(f)(x)|."""
+        y = self.forward(x)
+        logdet = self.forward_log_det_jacobian(x)
         return y, logdet
