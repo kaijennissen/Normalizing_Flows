@@ -57,7 +57,7 @@ def get_bernstein_poly_jac(theta):
     return bernstein_poly_jac
 
 
-def constrain_thetas(theta_unconstrained, fn=softplus):
+def constrain_thetas(theta_unconstrained, range_min=None, range_max=None, fn=softplus):
 
     d = jnp.concatenate(
         (
@@ -67,6 +67,7 @@ def constrain_thetas(theta_unconstrained, fn=softplus):
         ),
         axis=-1,
     )
+
     return jnp.cumsum(d[..., 1:], axis=-1)
 
 
@@ -104,4 +105,10 @@ class BernsteinBijector(distrax.Bijector):
         """Computes y = f(x) and log|det J(f)(x)|."""
         y = self.forward(x)
         logdet = self.forward_log_det_jacobian(x)
+        return y, logdet
+
+    def inverse_and_log_det(self, y):
+        """Computes y = f(x) and log|det J(f)(x)|."""
+        y = self.inverse(y)
+        logdet = ...
         return y, logdet

@@ -1,4 +1,5 @@
 import argparse
+from re import L
 from typing import Any, Iterator, Mapping, Optional, Sequence, Tuple
 
 import distrax
@@ -10,7 +11,6 @@ import numpy as np
 import optax
 import seaborn as sns
 import tensorflow_datasets as tfds
-from absl import app, flags, logging
 from distrax._src.bijectors.bijector import Array
 from jax import random
 from tensorflow_probability.substrates import jax as tfp
@@ -28,91 +28,10 @@ OptState = Any
 MNIST_IMAGE_SHAPE = (28, 28, 1)
 
 
-class AffineScalar(distrax.Bijector):
-    def __init__(self, scale, shift):
-
-        if hasattr(scale, "shape"):
-            D = scale.ndim
-            assert scale.shape == shift.shape
-        else:
-            D = 0
-
-        super().__init__(event_ndims_in=D, event_ndims_out=D)
-        self.bijector = distrax.Chain([tfb.Shift(shift), tfb.Scale(scale)])
-
-    def forward(self, x: Array) -> Array:
-        return self.bijector.forward(x)
-
-    def inverse(self, y: Array) -> Array:
-        return self.bijector.inverse(y)
-
-    def forward_and_log_det(self, x: Array) -> Tuple[Array, Array]:
-        return self.bijector.forward_and_log_det(x)
-
-    def inverse_and_log_det(self, y: Array) -> Tuple[Array, Array]:
-        return self.bijector.inverse_and_log_det(y)
-
-
-bij = AffineScalar(scale=jnp.array([0.2, 0.5]), shift=jnp.array([1.0, -1]))
-bij.forward(jnp.array([[1.0, -2], [2, -4], [3, -6]]))
-
-
-# MAF with
-# - Transformer: Affine
-# - Consitioner: Masking
-def conditioner(z: Array) -> Array:
-    assert z.ndim == 2
-    B, D = z.shape
-    norm = jnp.sqrt(jnp.cumsum(jnp.square(z), axis=-1))
-    beta = jnp.concatenate([jnp.zeros((B, 1)), norm[..., :-1]], axis=-1) / 10
-    alpha = jnp.exp(-beta / D)
-    return alpha, beta
-
-
-def transformer(z: Array) -> Array:
-    alpha, beta = conditioner(z)
-    return alpha * z + beta
-
-
-mu = jnp.array([-1, -1])
-sigma = jnp.ones(2)
-dist_base = distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma)
-key = random.PRNGKey(52)
-
-z = dist_base.sample(seed=key, sample_shape=(1000000,))
-
-N = 32
-cols = rows = int(np.ceil(np.sqrt(N / 2)))
-
-fig, axes = plt.subplots(rows, cols, figsize=(2.5 * cols, 2.5 * rows))
-
-zz = z
-l = 1  # frew of switching the conditioner
-for j in range(N):
-    if j % l == 0:
-        zz = transformer(jnp.concatenate([zz[..., 1:], zz[..., :1]], axis=1))
-    else:
-        zz = transformer(zz)
-    if j % 2 == 0:
-        i = j / 2
-        r = int(i // rows)
-        c = int(i % cols)
-        ax = axes[r, c]
-        x = zz[:, 0]
-        y = zz[:, 1]
-        # sns.scatterplot(x=x, y=y, s=5, color=".15",ax=ax)
-        sns.histplot(x=x, y=y, bins=100, pthresh=0.1, cmap="viridis", ax=ax)
-        # sns.kdeplot(x=x, y=y, levels=5, color="w", linewidths=1,ax=ax)
-        # ax.set_title(f"k={j}")
-        # ax.hist2d(zz[:, 0], zz[:, 1], bins=100)
-
-fig.tight_layout()
-plt.savefig("./plots/MAF.jpg")
-
-# TODO: replace conditioner with network
-
-
-# network
+FLOW_NUM_LAYERS = 10
+HIDDEN_SIZE = 500
+MLP_NUM_LAYERS = 3
+FLOW_NUM_PARAMS = 6
 
 
 def make_conditioner(
@@ -137,8 +56,8 @@ def make_flow_model(
     event_shape: Sequence[int],
     num_layers: int,
     hidden_sizes: Sequence[int],
-    bernstein_order: int,
-):
+    flow_num_params: int,
+) -> distrax.Transformed:
 
     mask = jnp.arange(0, np.prod(event_shape)) % 2  # every second element is masked
     mask = jnp.reshape(mask, event_shape)
@@ -147,6 +66,8 @@ def make_flow_model(
     # def bijector_fn(params: Array):
     #     return BernsteinBijector(params)
 
+    flow_num_params = 3 * flow_num_params + 1
+
     def bijector_fn(params: Array):
         return distrax.RationalQuadraticSpline(params, range_min=0.0, range_max=1.0)
 
@@ -154,23 +75,23 @@ def make_flow_model(
     for _ in range(num_layers):
         layer = distrax.MaskedCoupling(
             mask=mask,
+            bijector=bijector_fn,
             conditioner=make_conditioner(
                 event_shape=event_shape,
                 hidden_sizes=hidden_sizes,
-                num_bijector_params=bernstein_order,
+                num_bijector_params=flow_num_params,
             ),
-            bijector=bijector_fn,
         )
-        # T1 = distrax.Chain([tfb.Scale(softplus(a)), tfb.Shift(b)])
-        # T2 = tfb.SoftClip(low=0, high=1, hinge_softness=1.5)
-        # T3 = BernsteinBijector(thetas=constrain_thetas(theta))
-        # T4 = distrax.Chain([tfb.Scale(softplus(alpha)), tfb.Shift(beta)])
-        # chained_bijectors = [T4, T3, T2, T1]
+
         layers.append(layer)
         # Flip mask after each layer
         mask = jnp.logical_not(mask)
 
     flow = distrax.Inverse(distrax.Chain(layers))
+    # base_distribution = distrax.Independent(
+    #     distrax.Normal(loc=jnp.zeros(event_shape), scale=jnp.ones(event_shape)),
+    #     reinterpreted_batch_ndims=len(event_shape),
+    # )
     base_distribution = distrax.Independent(
         distrax.Uniform(low=jnp.zeros(event_shape), high=jnp.ones(event_shape)),
         reinterpreted_batch_ndims=len(event_shape),
@@ -187,7 +108,7 @@ def load_dataset(split: tfds.Split, batch_size: int) -> Iterator[Batch]:
     return iter(tfds.as_numpy(ds))
 
 
-def prepare_data(batch: Batch, prng_key: Optional[PRNGKey] = None) -> Array:
+def prepare_data(batch: Batch, prng_key: Optional[PRNGKey] = None) -> Array:  # type: ignore
     data = batch["image"].astype(np.float32)
     if prng_key is not None:
         # Dequantize pixel values {0, 1, ..., 255} with uniform noise [0, 1).
@@ -200,11 +121,24 @@ def prepare_data(batch: Batch, prng_key: Optional[PRNGKey] = None) -> Array:
 def log_prob(data: Array) -> Array:
     model = make_flow_model(
         event_shape=data.shape[1:],
-        num_layers=2,
-        hidden_sizes=[8] * 2,
-        bernstein_order=4,
+        num_layers=FLOW_NUM_LAYERS,
+        hidden_sizes=[HIDDEN_SIZE] * MLP_NUM_LAYERS,
+        flow_num_params=FLOW_NUM_PARAMS,  # num_bins / bernstein_order
     )
     return model.log_prob(data)
+
+
+@hk.without_apply_rng
+@hk.transform
+def sample(event_shape: Tuple, prng_key: PRNGKey, num_samples: int):  # type: ignore
+
+    model = make_flow_model(
+        event_shape=event_shape,
+        num_layers=FLOW_NUM_LAYERS,
+        hidden_sizes=[HIDDEN_SIZE] * MLP_NUM_LAYERS,
+        flow_num_params=FLOW_NUM_PARAMS,  # num_bins / bernstein_order
+    )
+    return model.sample(seed=prng_key, sample_shape=(num_samples,))
 
 
 def loss_fn(params: hk.Params, prng_key: PRNGKey, batch: Batch) -> Array:  # type: ignore
@@ -224,7 +158,7 @@ def eval_fn(params: hk.Params, batch: Batch) -> Array:
 def main(
     flow_num_layers,
     mlp_num_layers,
-    bernstein_order,
+    flow_num_params,
     hidden_size,
     batch_size,
     learning_rate,
@@ -258,6 +192,24 @@ def main(
             val_loss = eval_fn(params, next(valid_ds))
             print(f"STEP: {step}; validation loss: {val_loss}")
 
+    N = 16
+    samples = sample.apply(
+        params=params,
+        prng_key=next(prng_seq),
+        event_shape=MNIST_IMAGE_SHAPE,
+        num_samples=N,
+    )
+    cols = rows = int(np.ceil(np.sqrt(N)))
+    fig, axes = plt.subplots(rows, cols, figsize=(3 * cols, 3 * rows))
+
+    for i in range(N):
+        r = int(i // rows)
+        c = int(i % cols)
+        ax = axes[r, c]
+        ax.imshow(samples[i, ...])
+    # plt.show()
+    plt.savefig("./plots/MNIST_samples.jpg")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -275,12 +227,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--hidden_size",
-        default=500,
+        default=50,
         type=int,
         help="Hidden size of the MLP conditioner.",
     )
     parser.add_argument(
-        "--bernstein_order",
+        "--flow_num_params",
         default=4,
         type=int,
         help="Order of the Bernstein-Polynomial.",
@@ -315,7 +267,7 @@ if __name__ == "__main__":
         flow_num_layers=args.flow_num_layers,
         mlp_num_layers=args.mlp_num_layers,
         hidden_size=args.hidden_size,
-        bernstein_order=args.bernstein_order,
+        flow_num_params=args.flow_num_params,
         training_steps=args.training_steps,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
