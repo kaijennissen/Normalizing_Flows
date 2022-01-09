@@ -9,7 +9,8 @@ repos:
       - id: check-executables-have-shebangs
       - id: debug-statements
       - id: check-added-large-files
-        args: ['--maxkb=1000']
+        args: ["--maxkb=1000"]
+        exclude: "plots/banana_samples_maf.jpg"
       - id: mixed-line-ending
       - id: requirements-txt-fixer
   - repo: https://github.com/psf/black
