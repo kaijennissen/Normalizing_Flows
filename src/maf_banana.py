@@ -166,6 +166,7 @@ def main(
     training_steps,
     eval_frequency,
 ):
+
     optimizer = optax.adam(learning_rate)
 
     @jax.jit
@@ -197,6 +198,7 @@ def main(
             print(
                 f"STEP: {step}; training loss: {train_loss}, validation loss: {val_loss}"
             )
+
     # Evaluate
     N = 1000000
     samples_maf = sample.apply(
@@ -207,14 +209,14 @@ def main(
     )
     samples = next(make_dataset(seed=99, batch_size=N, num_batches=1))
 
-    num_points = 200
+    num_points = 2000
     x1 = jnp.linspace(-5, 8, num_points)
     x2 = jnp.linspace(-8, 8, num_points)
     X1, X2 = jnp.meshgrid(x1, x2)
     Z1 = banana_pdf(x1, x2)
     Z2 = jnp.exp(log_prob.apply(params, jnp.stack([X1, X2], axis=-1)))
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 16))
+    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
     # True Samples
     ax = axes[0, 0]
     ax.hist2d(
@@ -243,7 +245,7 @@ def main(
         ax.set_ylabel(r"$x_{2}$")
 
     # plt.show()
-    plt.savefig("./plots/banana_samples_maf.jpg")
+    plt.savefig("./plots/banana_samples_maf.jpg", dpi=600)
 
 
 if __name__ == "__main__":
@@ -273,13 +275,13 @@ if __name__ == "__main__":
         help="Order of the Bernstein-Polynomial.",
     )
     parser.add_argument(
-        "--batch_size",
+        "--batch-size",
         default=128,
         type=int,
         help="Batch size for training and evaluation.",
     )
     parser.add_argument(
-        "--learning_rate",
+        "--learning-rate",
         default=1e-4,
         type=float,
         help="Learning rate for the optimizer.",
