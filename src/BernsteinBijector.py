@@ -94,11 +94,23 @@ class BernsteinBijector(distrax.Bijector):
 
     def inverse(self, y):
         """Computes x = f^{-1}(y)."""
+        event_shape = self.thetas.shape[:-1]
         n_points = 200
         clip = 1e-7
-        x_fit = jnp.linspace(clip, 1 - clip, n_points)
+        x_fit = jnp.linspace(clip, 1 - clip, n_points)[..., np.newaxis] * jnp.ones(
+            (1,) + event_shape
+        )
         y_fit = self.forward(x_fit)
-        x = jnp.interp(y, y_fit, x_fit)
+
+        def inp(y, y_fit, x_fit):
+            return jnp.interp(y, y_fit, x_fit)
+
+        x = jax.vmap(inp, in_axes=-1)(y, y_fit, x_fit)
+
+        # x_inp = [
+        #     jnp.interp(y[:, i], y_fit[:, i], x_fit[:i]) for i in range(y_fit.shape[-1])
+        # ]
+
         return x
 
     def forward_and_log_det(self, x):
@@ -110,5 +122,5 @@ class BernsteinBijector(distrax.Bijector):
     def inverse_and_log_det(self, y):
         """Computes y = f(x) and log|det J(f)(x)|."""
         y = self.inverse(y)
-        logdet = ...
+        logdet = 0
         return y, logdet
