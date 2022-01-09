@@ -9,12 +9,10 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import optax
-import seaborn as sns
 from distrax._src.bijectors.bijector import Array
 from jax import random
 from tensorflow_probability.substrates import jax as tfp
 
-from BernsteinBijector import BernsteinBijector
 from densities.banana import banana_pdf
 
 tfd = tfp.distributions
@@ -27,9 +25,15 @@ OptState = Any
 
 
 FLOW_NUM_LAYERS = 8
-HIDDEN_SIZE = 64
+HIDDEN_SIZE = 128
 MLP_NUM_LAYERS = 2
-FLOW_NUM_PARAMS = 8
+FLOW_NUM_PARAMS = 12
+
+# TODO: rewrite to allow for arbitrary density
+# mask make_dataset with dataset specific generator which is importet from the densities folder
+# e.g. make_dataset=make_dataset_banana
+# same with dataset_pdf
+# e.g. dataset_pdf=banana_pdf
 
 
 def make_conditioner(
@@ -61,9 +65,6 @@ def make_flow_model(
     mask = jnp.reshape(mask, event_shape)
     mask = mask.astype(bool)
 
-    # def bijector_fn(params: Array):
-    #     return BernsteinBijector(params)
-
     flow_num_params = 3 * flow_num_params + 1
 
     def bijector_fn(params: Array):
@@ -90,10 +91,6 @@ def make_flow_model(
         distrax.Normal(loc=jnp.zeros(event_shape), scale=jnp.ones(event_shape)),
         reinterpreted_batch_ndims=len(event_shape),
     )
-    # base_distribution = distrax.Independent(
-    #     distrax.Uniform(low=jnp.zeros(event_shape), high=jnp.ones(event_shape)),
-    #     reinterpreted_batch_ndims=len(event_shape),
-    # )
     return distrax.Transformed(base_distribution, flow)
 
 
@@ -107,14 +104,6 @@ def make_dataset(seed: int, batch_size: int = 8, num_batches: int = 1000):
         x2 = tfd.Normal(loc=0, scale=2.0).sample(seed=key, sample_shape=batch_size)
         x1 = tfd.Normal(loc=x2 ** 2 / 4, scale=1.0).sample(seed=subkey)
         yield jnp.stack([x1, x2], axis=-1)
-
-
-# def prepare_data(batch: Batch, prng_key: Optional[PRNGKey] = None) -> Array:  # type: ignore
-#     data = batch["image"].astype(np.float32)
-#     if prng_key is not None:
-#         # Dequantize pixel values {0, 1, ..., 255} with uniform noise [0, 1).
-#         data += jax.random.uniform(prng_key, data.shape)
-#     return data / 256.0  # Normalize pixel values from [0, 256) to [0, 1).
 
 
 @hk.without_apply_rng
@@ -157,10 +146,6 @@ def eval_fn(params: hk.Params, batch: Batch) -> Array:
 
 
 def main(
-    flow_num_layers,
-    mlp_num_layers,
-    flow_num_params,
-    hidden_size,
     batch_size,
     learning_rate,
     training_steps,
@@ -244,8 +229,7 @@ def main(
         ax.set_xlabel(r"$x_{1}$")
         ax.set_ylabel(r"$x_{2}$")
 
-    # plt.show()
-    plt.savefig("./plots/banana_samples_maf.jpg", dpi=600)
+    plt.savefig("./plots/banana/maf_banana.jpg", dpi=600)
 
 
 if __name__ == "__main__":
@@ -301,10 +285,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(
-        flow_num_layers=args.flow_num_layers,
-        mlp_num_layers=args.mlp_num_layers,
-        hidden_size=args.hidden_size,
-        flow_num_params=args.flow_num_params,
         training_steps=args.training_steps,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,

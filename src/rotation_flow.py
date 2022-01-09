@@ -96,5 +96,7 @@ ax.set_zlabel(r"$g(x_{1},x_{2})$")
 ax.view_init(elev=20, azim=-45)
 ax.grid(False)
 fig.tight_layout(pad=3, w_pad=0.1)
-plt.savefig("./plots/MVN_3D_rotation.jpg", dpi=600)
+plt.savefig("./plots/rotation/rotation_pdf_3D.jpg", dpi=600)
 plt.close()
+
+# TODO: learn parameters of rotation with simple jax NN
