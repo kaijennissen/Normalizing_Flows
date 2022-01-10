@@ -10,6 +10,7 @@ repos:
       - id: debug-statements
       - id: check-added-large-files
         args: ['--maxkb=1000']
+        exclude: "plots/gaussian_blobs/maf_gaussian_blobs.jpg"
       - id: mixed-line-ending
       - id: requirements-txt-fixer
   - repo: https://github.com/psf/black

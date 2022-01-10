@@ -1,9 +1,7 @@
-from re import split
-
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+from haiku import PRNGSequence
 from jax import random
 from jax.random import PRNGKey
 from tensorflow_probability.substrates import jax as tfp
@@ -26,6 +24,17 @@ def banana_sample(prng_key, sample_shape):
     x2 = tfd.Normal(loc=0, scale=2.0).sample(seed=key, sample_shape=sample_shape)
     x1 = tfd.Normal(loc=x2 ** 2 / 4, scale=1.0).sample(seed=subkey)
     return jnp.stack([x1, x2], axis=-1)
+
+
+def make_dataset_banana(seed: int, batch_size: int = 8, num_batches: int = 1):
+    """pdf(x1,x2)=N(x1|(1/4)*x2**2,1)N(x2|0,4)"""
+
+    prng_seq = PRNGSequence(seed)
+    for _ in range(num_batches):
+        key, subkey = random.split(next(prng_seq), num=2)
+        x2 = tfd.Normal(loc=0, scale=2.0).sample(seed=key, sample_shape=batch_size)
+        x1 = tfd.Normal(loc=x2 ** 2 / 4, scale=1.0).sample(seed=subkey)
+        yield jnp.stack([x1, x2], axis=-1)
 
 
 if __name__ == "__main__":

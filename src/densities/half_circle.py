@@ -6,8 +6,15 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 
-# Density 2
 def half_circle_pdf(pos):
+    x1 = pos[..., 0]
+    x2 = pos[..., 1]
+    theta = jnp.arctan2(x2, x1)
+    r = jnp.sqrt(jnp.sum(pos ** 2, axis=-1))
+    return jnp.exp(-0.5 * theta ** 2) * jnp.exp(-0.5 * ((r - 1) / 0.2) ** 2)
+
+
+def make_dataset_half_circle(pos):
     x1 = pos[..., 0]
     x2 = pos[..., 1]
     theta = jnp.arctan2(x2, x1)

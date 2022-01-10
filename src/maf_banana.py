@@ -13,7 +13,8 @@ from distrax._src.bijectors.bijector import Array
 from jax import random
 from tensorflow_probability.substrates import jax as tfp
 
-from densities.banana import banana_pdf
+from densities.banana import banana_pdf, make_dataset_banana
+from densities.gaussian_blobs import gaussian_blobs_pdf, make_dataset_gaussian_blobs
 
 tfd = tfp.distributions
 tfb = tfp.bijectors
@@ -24,16 +25,24 @@ Batch = Mapping[str, np.ndarray]
 OptState = Any
 
 
-FLOW_NUM_LAYERS = 8
-HIDDEN_SIZE = 128
-MLP_NUM_LAYERS = 2
-FLOW_NUM_PARAMS = 12
-
 # TODO: rewrite to allow for arbitrary density
 # mask make_dataset with dataset specific generator which is importet from the densities folder
 # e.g. make_dataset=make_dataset_banana
 # same with dataset_pdf
 # e.g. dataset_pdf=banana_pdf
+
+FLOW_NUM_LAYERS = 8
+HIDDEN_SIZE = 128
+MLP_NUM_LAYERS = 2
+FLOW_NUM_PARAMS = 12
+DENSITY = "gaussian_blobs"
+
+if DENSITY == "banana":
+    make_dataset = make_dataset_banana
+    dataset_pdf = banana_pdf
+elif DENSITY == "gaussian_blobs":
+    make_dataset = make_dataset_gaussian_blobs
+    dataset_pdf = gaussian_blobs_pdf
 
 
 def make_conditioner(
@@ -92,18 +101,6 @@ def make_flow_model(
         reinterpreted_batch_ndims=len(event_shape),
     )
     return distrax.Transformed(base_distribution, flow)
-
-
-# TODO: make generator
-def make_dataset(seed: int, batch_size: int = 8, num_batches: int = 1000):
-    """pdf(x1,x2)=N(x1|(1/4)*x2**2,1)N(x2|0,4)"""
-
-    prng_seq = hk.PRNGSequence(seed)
-    for _ in range(num_batches):
-        key, subkey = random.split(next(prng_seq), num=2)
-        x2 = tfd.Normal(loc=0, scale=2.0).sample(seed=key, sample_shape=batch_size)
-        x1 = tfd.Normal(loc=x2 ** 2 / 4, scale=1.0).sample(seed=subkey)
-        yield jnp.stack([x1, x2], axis=-1)
 
 
 @hk.without_apply_rng
@@ -198,38 +195,39 @@ def main(
     x1 = jnp.linspace(-5, 8, num_points)
     x2 = jnp.linspace(-8, 8, num_points)
     X1, X2 = jnp.meshgrid(x1, x2)
-    Z1 = banana_pdf(x1, x2)
-    Z2 = jnp.exp(log_prob.apply(params, jnp.stack([X1, X2], axis=-1)))
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
-    # True Samples
-    ax = axes[0, 0]
-    ax.hist2d(
-        samples[:, 0], samples[:, 1], bins=100, range=np.array([[-4, 8], [-6, 6]])
-    )
+    # pdf values of true and learned distribution
+    # X1X2=jnp.stack([X1,X2],axis=-1)
+    # Z1 = dataset_pdf(X1X2)
+    # Z2 = jnp.exp(log_prob.apply(params,X1X2))
+
+    # make plots
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+
+    plot_range = np.array([[-4, 4], [-4, 4]])
+    # Samples from true distrubution
+    ax = axes[0]
+    ax.hist2d(samples[:, 0], samples[:, 1], bins=100, range=plot_range)
     ax.set_title("True")
 
-    # Learned Samples
-    ax = axes[0, 1]
-    ax.hist2d(
-        samples_maf[:, 0],
-        samples_maf[:, 1],
-        bins=100,
-        range=np.array([[-4, 8], [-6, 6]]),
-    )
+    # Samples from learned distrubution
+    ax = axes[1]
+    ax.hist2d(samples_maf[:, 0], samples_maf[:, 1], bins=100, range=plot_range)
     ax.set_title("Reconstructed")
 
-    ax = axes[1, 0]
-    ax.contourf(X1, X2, Z1)
+    # True pdf
+    # ax = axes[1, 0]
+    # ax.contourf(X1, X2, Z1)
 
-    ax = axes[1, 1]
-    ax.contourf(X1, X2, Z2)
+    # # learned pdf
+    # ax = axes[1, 1]
+    # ax.contourf(X1, X2, Z2)
 
     for ax in axes.reshape(-1):
         ax.set_xlabel(r"$x_{1}$")
         ax.set_ylabel(r"$x_{2}$")
-
-    plt.savefig("./plots/banana/maf_banana.jpg", dpi=600)
+    fig.tight_layout()
+    plt.savefig(f"./plots/{DENSITY}/maf_{DENSITY}.jpg", dpi=600)
 
 
 if __name__ == "__main__":
