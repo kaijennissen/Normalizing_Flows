@@ -106,11 +106,8 @@ class BernsteinBijector(distrax.Bijector):
             return jnp.interp(y, y_fit, x_fit)
 
         x = jax.vmap(inp, in_axes=-1)(y, y_fit, x_fit)
-
-        # x_inp = [
-        #     jnp.interp(y[:, i], y_fit[:, i], x_fit[:i]) for i in range(y_fit.shape[-1])
-        # ]
-
+        # x_inp = [jnp.interp(y[i], y_fit[:, i], x_fit[:,i]) for i in range(y_fit.shape[-1])]
+        # x = jnp.stack(x_inp, axis=-1)
         return x
 
     def forward_and_log_det(self, x):

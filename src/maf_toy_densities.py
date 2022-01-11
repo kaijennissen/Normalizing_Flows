@@ -9,13 +9,20 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import optax
-import seaborn as sns
-import tensorflow_datasets as tfds
 from distrax._src.bijectors.bijector import Array
 from jax import random
 from tensorflow_probability.substrates import jax as tfp
 
 from BernsteinBijector import BernsteinBijector
+from densities.banana import banana_pdf, make_dataset_banana
+from densities.energies import (
+    energy_1_pdf,
+    make_dataset_energy_1,
+    make_dataset_energy_2,
+    make_dataset_energy_3,
+    make_dataset_energy_4,
+)
+from densities.gaussian_blobs import gaussian_blobs_pdf, make_dataset_gaussian_blobs
 
 tfd = tfp.distributions
 tfb = tfp.bijectors
@@ -25,13 +32,35 @@ PRNGKey = Array
 Batch = Mapping[str, np.ndarray]
 OptState = Any
 
-MNIST_IMAGE_SHAPE = (28, 28, 1)
 
+# TODO: rewrite to allow for arbitrary density
+# mask make_dataset with dataset specific generator which is importet from the densities folder
+# e.g. make_dataset=make_dataset_banana
+# same with dataset_pdf
+# e.g. dataset_pdf=banana_pdf
 
-FLOW_NUM_LAYERS = 10
-HIDDEN_SIZE = 500
-MLP_NUM_LAYERS = 3
-FLOW_NUM_PARAMS = 6
+DENSITY = "energy1"
+
+FLOW_NUM_LAYERS = 2
+HIDDEN_SIZE = 32
+MLP_NUM_LAYERS = 2
+FLOW_NUM_PARAMS = 12
+
+if DENSITY == "banana":
+    make_dataset = make_dataset_banana
+    dataset_pdf = banana_pdf
+elif DENSITY == "gaussian_blobs":
+    make_dataset = make_dataset_gaussian_blobs
+    dataset_pdf = gaussian_blobs_pdf
+elif DENSITY == "energy1":
+    make_dataset = make_dataset_energy_1
+    dataset_pdf = energy_1_pdf
+elif DENSITY == "energy2":
+    make_dataset = make_dataset_energy_2
+elif DENSITY == "energy3":
+    make_dataset = make_dataset_energy_3
+elif DENSITY == "energy4":
+    make_dataset = make_dataset_energy_4
 
 
 def make_conditioner(
@@ -40,7 +69,7 @@ def make_conditioner(
 
     return hk.Sequential(
         [
-            hk.Flatten(preserve_dims=-len(event_shape)),
+            hk.Flatten(preserve_dims=-1),
             hk.nets.MLP(hidden_sizes, activate_final=True),
             hk.Linear(
                 np.prod(event_shape) * num_bijector_params,
@@ -69,7 +98,7 @@ def make_flow_model(
     flow_num_params = 3 * flow_num_params + 1
 
     def bijector_fn(params: Array):
-        return distrax.RationalQuadraticSpline(params, range_min=0.0, range_max=1.0)
+        return distrax.RationalQuadraticSpline(params, range_min=-8.0, range_max=8.0)
 
     layers = []
     for _ in range(num_layers):
@@ -88,43 +117,25 @@ def make_flow_model(
         mask = jnp.logical_not(mask)
 
     flow = distrax.Inverse(distrax.Chain(layers))
-    # base_distribution = distrax.Independent(
-    #     distrax.Normal(loc=jnp.zeros(event_shape), scale=jnp.ones(event_shape)),
-    #     reinterpreted_batch_ndims=len(event_shape),
-    # )
     base_distribution = distrax.Independent(
-        distrax.Uniform(low=jnp.zeros(event_shape), high=jnp.ones(event_shape)),
+        distrax.Normal(loc=jnp.zeros(event_shape), scale=jnp.ones(event_shape)),
         reinterpreted_batch_ndims=len(event_shape),
     )
+
     return distrax.Transformed(base_distribution, flow)
-
-
-def load_dataset(split: tfds.Split, batch_size: int) -> Iterator[Batch]:
-    ds = tfds.load("mnist", split=split, shuffle_files=True)
-    ds = ds.shuffle(buffer_size=10 * batch_size)
-    ds = ds.batch(batch_size)
-    ds = ds.prefetch(buffer_size=5)
-    ds = ds.repeat()
-    return iter(tfds.as_numpy(ds))
-
-
-def prepare_data(batch: Batch, prng_key: Optional[PRNGKey] = None) -> Array:  # type: ignore
-    data = batch["image"].astype(np.float32)
-    if prng_key is not None:
-        # Dequantize pixel values {0, 1, ..., 255} with uniform noise [0, 1).
-        data += jax.random.uniform(prng_key, data.shape)
-    return data / 256.0  # Normalize pixel values from [0, 256) to [0, 1).
 
 
 @hk.without_apply_rng
 @hk.transform
 def log_prob(data: Array) -> Array:
+
     model = make_flow_model(
-        event_shape=data.shape[1:],
+        event_shape=data.shape[-1:],
         num_layers=FLOW_NUM_LAYERS,
         hidden_sizes=[HIDDEN_SIZE] * MLP_NUM_LAYERS,
         flow_num_params=FLOW_NUM_PARAMS,  # num_bins / bernstein_order
     )
+
     return model.log_prob(data)
 
 
@@ -138,36 +149,35 @@ def sample(event_shape: Tuple, prng_key: PRNGKey, num_samples: int):  # type: ig
         hidden_sizes=[HIDDEN_SIZE] * MLP_NUM_LAYERS,
         flow_num_params=FLOW_NUM_PARAMS,  # num_bins / bernstein_order
     )
+
     return model.sample(seed=prng_key, sample_shape=(num_samples,))
 
 
+# @jax.jit
 def loss_fn(params: hk.Params, prng_key: PRNGKey, batch: Batch) -> Array:  # type: ignore
-    data = prepare_data(batch, prng_key)
+    # data = prepare_data(batch, prng_key)
     # Loss is average negative log likelihood.
-    loss = -jnp.mean(log_prob.apply(params, data))
+    loss = -jnp.mean(log_prob.apply(params, batch))
     return loss
 
 
-@jax.jit
+# @jax.jit
 def eval_fn(params: hk.Params, batch: Batch) -> Array:
-    data = prepare_data(batch)  # We don't dequantize during evaluation.
-    loss = -jnp.mean(log_prob.apply(params, data))
+    # data = prepare_data(batch)  # We don't dequantize during evaluation.
+    loss = -jnp.mean(log_prob.apply(params, batch))
     return loss
 
 
 def main(
-    flow_num_layers,
-    mlp_num_layers,
-    flow_num_params,
-    hidden_size,
     batch_size,
     learning_rate,
     training_steps,
     eval_frequency,
 ):
+
     optimizer = optax.adam(learning_rate)
 
-    @jax.jit
+    # @jax.jit
     def update(
         params: hk.Params, prng_key: PRNGKey, opt_state: OptState, batch: Batch
     ) -> Tuple[hk.Params, OptState]:
@@ -179,36 +189,70 @@ def main(
         return new_params, new_opt_state
 
     prng_seq = hk.PRNGSequence(42)
-    params = log_prob.init(next(prng_seq), np.zeros((1, *MNIST_IMAGE_SHAPE)))
+    params = log_prob.init(next(prng_seq), np.zeros((1, 2)))
     opt_state = optimizer.init(params)
 
-    train_ds = load_dataset(tfds.Split.TRAIN, batch_size)
-    valid_ds = load_dataset(tfds.Split.TEST, batch_size)
+    train_ds = make_dataset(
+        seed=2123, batch_size=batch_size, num_batches=2 * training_steps
+    )
+    valid_ds = make_dataset(
+        seed=2235, batch_size=batch_size, num_batches=training_steps
+    )
 
     for step in range(training_steps):
         params, opt_state = update(params, next(prng_seq), opt_state, next(train_ds))
 
         if step % eval_frequency == 0:
+            train_loss = eval_fn(params, next(train_ds))
             val_loss = eval_fn(params, next(valid_ds))
-            print(f"STEP: {step}; validation loss: {val_loss}")
+            print(
+                f"STEP: {step}; training loss: {train_loss}, validation loss: {val_loss}"
+            )
 
-    N = 16
-    samples = sample.apply(
+    # Evaluate
+    N = 1000000
+    samples_maf = sample.apply(
         params=params,
         prng_key=next(prng_seq),
-        event_shape=MNIST_IMAGE_SHAPE,
+        event_shape=(2,),
         num_samples=N,
     )
-    cols = rows = int(np.ceil(np.sqrt(N)))
-    fig, axes = plt.subplots(rows, cols, figsize=(3 * cols, 3 * rows))
+    samples = next(make_dataset(seed=99, batch_size=N, num_batches=1))
 
-    for i in range(N):
-        r = int(i // rows)
-        c = int(i % cols)
-        ax = axes[r, c]
-        ax.imshow(samples[i, ...])
-    # plt.show()
-    plt.savefig("./plots/MNIST_samples.jpg")
+    # make plots
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+
+    plot_range = np.array([[-4, 4], [-4, 4]])
+    # Samples from true distrubution
+    ax = axes[0]
+    ax.hist2d(samples[:, 0], samples[:, 1], bins=100, range=plot_range)
+    ax.set_title("True")
+
+    # Samples from learned distrubution
+    ax = axes[1]
+    ax.hist2d(samples_maf[:, 0], samples_maf[:, 1], bins=100, range=plot_range)
+    ax.set_title("Reconstructed")
+
+    for ax in axes.reshape(-1):
+        ax.set_xlabel(r"$x_{1}$")
+        ax.set_ylabel(r"$x_{2}$")
+    fig.tight_layout()
+    plt.savefig(f"./plots/{DENSITY}/maf_{DENSITY}.jpg", dpi=600)
+
+    # num_points = 2000
+    # x1 = jnp.linspace(-4, 4, num_points)
+    # x2 = jnp.linspace(-4, 4, num_points)
+    # X1, X2 = jnp.meshgrid(x1, x2)
+
+    # # pdf values of true and learned distribution
+    # X1X2 = jnp.stack([X1, X2], axis=-1)
+    # Z1 = dataset_pdf(X1X2)
+    # Z2 = jnp.exp(log_prob.apply(params, X1X2))
+
+    # fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    # # axes[0].contourf(X1, X2, Z1, cmap="viridis")
+    # axes[1].contourf(X1, X2, Z2, cmap="viridis")
+    # plt.savefig(f"plots/{DENSITY}/{DENSITY}_pdf.jpg", dpi=600)
 
 
 if __name__ == "__main__":
@@ -238,13 +282,13 @@ if __name__ == "__main__":
         help="Order of the Bernstein-Polynomial.",
     )
     parser.add_argument(
-        "--batch_size",
+        "--batch-size",
         default=128,
         type=int,
         help="Batch size for training and evaluation.",
     )
     parser.add_argument(
-        "--learning_rate",
+        "--learning-rate",
         default=1e-4,
         type=float,
         help="Learning rate for the optimizer.",
@@ -256,7 +300,7 @@ if __name__ == "__main__":
         help="Number of training steps to run.",
     )
     parser.add_argument(
-        "--eval_frequency",
+        "--eval-frequency",
         default=100,
         type=int,
         help="How often to evaluate the model.",
@@ -264,10 +308,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(
-        flow_num_layers=args.flow_num_layers,
-        mlp_num_layers=args.mlp_num_layers,
-        hidden_size=args.hidden_size,
-        flow_num_params=args.flow_num_params,
         training_steps=args.training_steps,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
