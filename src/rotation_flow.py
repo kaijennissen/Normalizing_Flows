@@ -2,14 +2,9 @@ import distrax
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import numpy as np
-import scipy.interpolate as I
 import seaborn as sns
 from jax import random
-from jax.nn import sigmoid, softmax, softplus
 from tensorflow_probability.substrates import jax as tfp
-
-from BernsteinBijector import BernsteinBijector, constrain_thetas
 
 tfd = tfp.distributions
 tfb = tfp.bijectors
@@ -42,59 +37,89 @@ class OrthogonalProjection2D(distrax.Bijector):
         return y, logdet
 
 
-keys = random.split(random.PRNGKey(12), 3)
+# Step 1:
+# Visualize the transformation
 
-a = jnp.exp(jax.random.normal(keys[0]))
-b = jax.random.normal(keys[1])
-theta = jax.random.uniform(keys[2], minval=0.0, maxval=2.0 * jnp.pi)
-# a = 1.5
-# b = .2
-# theta = np.pi / 3
-
-T1 = distrax.Block(tfb.Scale(a), ndims=1)
-T2 = distrax.Block(tfb.Shift(b), ndims=1)
-T3 = OrthogonalProjection2D(theta=theta)
-T4 = distrax.Block(tfb.Log(), ndims=1)
-bij = distrax.Chain([T4, T3, T2, T1])
+key = random.PRNGKey(2364)
+x = distrax.MultivariateNormalDiag(
+    loc=jnp.zeros(2), scale_diag=jnp.array([1.5, 0.5])
+).sample(seed=key, sample_shape=(1000000,))
+Tx = OrthogonalProjection2D(theta=jnp.pi / 4).forward(x)
 
 
-mu = jnp.zeros(2)
-sigma = jnp.ones(2)
-dist_base = distrax.MultivariateNormalDiag(loc=mu, scale_diag=sigma)
-dist_transformed = distrax.Transformed(dist_base, bij)
+binrange = jnp.array([[-7, 7], [-7, 7]])
+cm = plt.get_cmap("viridis")
+f, axes = plt.subplots(1, 2, figsize=(12, 6))
+sns.histplot(x=x[:, 0], y=x[:, 1], bins=100, cmap=cm, ax=axes[0], binrange=binrange)
+sns.histplot(x=Tx[:, 0], y=Tx[:, 1], bins=100, cmap=cm, ax=axes[1], binrange=binrange)
+plt.savefig("plots/rotation/rotation1.jpg")
+plt.close()
 
-x1 = np.linspace(-3, 3, 600)
-x2 = np.linspace(-3, 3, 600)
-X1, X2 = np.meshgrid(x1, x2)
-X = np.stack([X1, X2], axis=-1)
-Y = np.exp(dist_base.log_prob(X))
-Z = np.exp(dist_transformed.log_prob(X))
+# Step 2:
+#  Generate Samples from the transformed distribution given a set of parameters
 
-cm = plt.cm.get_cmap("viridis")
-fig = plt.figure(figsize=(12, 6))
-ax = fig.add_subplot(121, projection="3d")
-surf = ax.plot_surface(X1, X2, Y, rstride=8, cstride=8, alpha=0.9, cmap=cm)
-cset = ax.contourf(X1, X2, Y, zdir="z", offset=-0.3, cmap=cm)
-cset = ax.contourf(X1, X2, Y, zdir="x", offset=-5, cmap=cm)
-cset = ax.contourf(X1, X2, Y, zdir="y", offset=-5, cmap=cm)
-ax.set_zlim(-0.3, np.max(Y) * 1.4)
-ax.set_xlabel(r"$x_{2}$")
-ax.set_ylabel(r"$x_{1}$")
-ax.set_zlabel(r"$f(x_{1},x_{2})$")
-ax.view_init(elev=20, azim=45)
-ax.grid(False)
-ax = fig.add_subplot(122, projection="3d")
-surf = ax.plot_surface(X1, X2, Z, rstride=8, cstride=8, alpha=0.9, cmap=cm)
-cset = ax.contourf(X1, X2, Z, zdir="z", offset=-0.6, cmap=cm)
-cset = ax.contourf(X1, X2, Z, zdir="x", offset=-5, cmap=cm)
-cset = ax.contourf(X1, X2, Z, zdir="y", offset=5, cmap=cm)
-ax.set_zlim(-0.6, np.max(Z) * 1.35)
-ax.set_xlabel(r"$x_{1}$")
-ax.set_ylabel(r"$x_{2}$")
-ax.set_zlabel(r"$g(x_{1},x_{2})$")
 
-ax.view_init(elev=20, azim=-45)
-ax.grid(False)
-fig.tight_layout(pad=3, w_pad=0.1)
-plt.savefig("./plots/MVN_3D_rotation.jpg", dpi=600)
+def make_dataset(seed, batch_size: int, num_batches: int):
+
+    bij = OrthogonalProjection2D(theta=jnp.pi / 3)
+    base_dist = distrax.MultivariateNormalDiag(
+        loc=jnp.array([3.0, 1.0]), scale_diag=jnp.array([0.75, 3.0])
+    )
+    true_dist = distrax.Transformed(base_dist, bij)
+
+    key = random.PRNGKey(seed)
+    for _ in range(num_batches):
+        key, subkey = random.split(key)
+        yield true_dist.sample(seed=subkey, sample_shape=(batch_size,))
+
+
+# Step 3:
+def make_flow(params):
+    a = params[0]
+    b = params[1]
+    theta = params[2]
+    T1 = distrax.Block(tfb.Scale(a), ndims=1)
+    T2 = distrax.Block(tfb.Shift(b), ndims=1)
+    T3 = OrthogonalProjection2D(theta=theta)
+    bij = distrax.Chain([T3, T2, T1])
+
+    base_dist = distrax.MultivariateNormalDiag(loc=jnp.zeros(2), scale_diag=jnp.ones(2))
+    flow_dist = distrax.Transformed(base_dist, bij)
+
+    return flow_dist
+
+
+def nll(params, batch):
+    flow_dist = make_flow(params)
+    return -jnp.mean(flow_dist.log_prob(batch))
+
+
+@jax.jit
+def update(params, batch, learning_rate):
+    loss, grads = jax.value_and_grad(nll)(params, batch)
+    params = [p - learning_rate * g for p, g in zip(params, grads)]
+    return params, loss
+
+
+training_steps = 50000
+a_init = jnp.array([1.0, 1.0])
+b_init = jnp.array([0.0, 0.0])
+theta_init = jnp.pi
+params = [a_init, b_init, theta_init]
+train_ds = make_dataset(seed=435, batch_size=128, num_batches=training_steps)
+for step in range(training_steps):
+    params, loss = update(params=params, batch=next(train_ds), learning_rate=1e-3)
+    if step % 1000 == 0:
+        print(f"Loss: {loss}")
+
+flow_dist = make_flow(params)
+x = next(make_dataset(seed=435, batch_size=1000000, num_batches=1))
+Tx = flow_dist.sample(seed=random.PRNGKey(23), sample_shape=(1000000,))
+
+binrange = jnp.array([[-13, 13], [-7, 13]])
+cm = plt.get_cmap("viridis")
+f, axes = plt.subplots(1, 2, figsize=(12, 6))
+sns.histplot(x=x[:, 0], y=x[:, 1], bins=100, cmap=cm, ax=axes[0], binrange=binrange)
+sns.histplot(x=Tx[:, 0], y=Tx[:, 1], bins=100, cmap=cm, ax=axes[1], binrange=binrange)
+plt.savefig("plots/rotation/rotation2.jpg")
 plt.close()
