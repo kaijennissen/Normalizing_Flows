@@ -36,6 +36,11 @@ class OrthogonalProjection2D(distrax.Bijector):
 Chaining the above bijector with shift, scale and log yields the following transformed distribution.
 ![Chained Bijectorr](./plots/MVN_3D_rotation.jpg)
 
+
+## MAF
+
+![MAF](./plots/banana_samples_maf.jpg)
+
 ## Bernstein Flows
 
 ### Univariate
