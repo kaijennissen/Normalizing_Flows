@@ -1,6 +1,14 @@
 # Normalizing Flows
 
+% # TODO: add table of content
+
+## Intro
+
+% # TODO: short description of normalizing flows
+
 ## Custom Bijector with distrax
+
+% # TODO: add part about custom bijector and training
 
 ```python
 import distrax
@@ -36,7 +44,9 @@ class OrthogonalProjection2D(distrax.Bijector):
 Chaining the above bijector with shift, scale and log yields the following transformed distribution.
 ![Chained Bijectorr](./plots/MVN_3D_rotation.jpg)
 
-## MAF
+## MAF & Real NVP
+
+% # TODO: text and images about MAF and Real NVP
 
 ![MAF](./plots/banana_samples_maf.jpg)
 
