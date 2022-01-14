@@ -1,5 +1,7 @@
 # Normalizing Flows
 
+![Real NVP Example](./plots/banana/real_nvp_banana.gif)
+
 ## Custom Bijector with distrax
 
 ```python
