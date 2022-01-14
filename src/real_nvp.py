@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Tuple
+from typing import Any, Callable, List, Tuple
 
 import imageio
 import jax
@@ -16,7 +16,7 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 
-def sample_N01(N: int, seed: KeyArray):
+def sample_N01(N: int, seed: KeyArray) -> jnp.ndarray:
     """Sample from the base distribution.
 
     Args:
@@ -31,7 +31,7 @@ def sample_N01(N: int, seed: KeyArray):
     )
 
 
-def log_prob_N01(x: jnp.ndarray):
+def log_prob_N01(x: jnp.ndarray) -> Callable:
     """Log probability of base distribution.
 
     Args:
@@ -50,7 +50,7 @@ def forward_nvp(
     shift_and_log_scale_fn: Callable,
     x: jnp.ndarray,
     flip: bool = False,
-):
+) -> jnp.ndarray:
     """[summary]
 
     Args:
@@ -83,7 +83,7 @@ def inverse_nvp(
     shift_and_log_scale_fn: Callable,
     y: jnp.ndarray,
     flip: bool = False,
-):
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """[summary]
 
     Args:
@@ -95,7 +95,6 @@ def inverse_nvp(
     Returns:
         [type]: [description]
     """
-
     d = y.shape[-1] // 2
     y1 = y[:, :d]
     y2 = y[:, d:]
@@ -106,8 +105,9 @@ def inverse_nvp(
     x1 = y1
     x2 = (y2 - shift) * jnp.exp(-log_scale)
     if flip:
-        y1, x2 = x2, x1
-    x = jnp.concatenate([y1, x2], axis=-1)
+        x1, x2 = x2, x1
+
+    x = jnp.concatenate([x1, x2], axis=-1)
     return x, log_scale
 
 
@@ -117,7 +117,7 @@ def log_prob_nvp(
     base_log_prob_fn: Callable,
     y: jnp.ndarray,
     flip: bool = False,
-):
+) -> float:
     """[summary]
 
     Args:
@@ -135,18 +135,20 @@ def log_prob_nvp(
     return base_log_prob_fn(x) + inv_log_det
 
 
-def shift_and_log_scale_fn(net_params: list, x: jnp.ndarray):
+def shift_and_log_scale_fn(
+    net_params: list, x: jnp.ndarray
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
     act = x
     for W, b in net_params[:-1]:
         out = jnp.matmul(act, W) + b
-        act = jax.nn.relu(out)
+        act = jax.nn.leaky_relu(out)
 
     W, b = net_params[-1]
     out = jnp.dot(act, W) + b
     return jnp.split(out, 2, axis=1)
 
 
-def init_mlp(hidden_units: list = [4]):
+def init_mlp(hidden_units: List[int] = [4]) -> List[List[jnp.ndarray]]:
     """[summary]
 
     Args:
@@ -156,10 +158,10 @@ def init_mlp(hidden_units: list = [4]):
         [type]: [description]
     """
     # two output nodes, shift and log_scale
-    D = 2
-    hidden_units.insert(0, 1)
-    hidden_units.append(D)
-
+    # D: int = int(2)
+    # hidden_units.insert(0, 1)
+    # hidden_units.append(D)
+    hidden_units = [1, 4, 2]
     params = []
     key = random.PRNGKey(534)
     for m, n in zip(hidden_units[:-1], hidden_units[1:]):
@@ -170,7 +172,9 @@ def init_mlp(hidden_units: list = [4]):
     return params
 
 
-def init_nvp_chain(n: int = 2):
+def init_nvp_chain(
+    n: int = 2,
+) -> Tuple[List[List[List[jnp.ndarray]]], List[Tuple[Callable, bool]]]:
     """[summary]
 
     Args:
@@ -200,7 +204,7 @@ def init_nvp_chain(n: int = 2):
 
 def sample_nvp_chain(
     params: list, fns_config: list, base_sample_fn: Callable, N: int, key: KeyArray
-):
+) -> jnp.ndarray:
     """[summary]
 
     Args:
@@ -221,7 +225,9 @@ def sample_nvp_chain(
     return z
 
 
-def make_log_prob_fn(net_params: list, log_prob_fn: Callable, fn_config: Tuple):
+def make_log_prob_fn(
+    net_params: list, log_prob_fn: Callable, fn_config: Tuple
+) -> Callable:
     """[summary]
 
     Args:
@@ -236,7 +242,7 @@ def make_log_prob_fn(net_params: list, log_prob_fn: Callable, fn_config: Tuple):
     return lambda x: log_prob_nvp(net_params, fn, log_prob_fn, x, flip=flip)
 
 
-def log_prob_nvp_chains(params, fns_config, base_log_prob_fn, y):
+def log_prob_nvp_chains(params, fns_config, base_log_prob_fn, y) -> jnp.ndarray:
     """[summary]
 
     Args:
@@ -255,16 +261,16 @@ def log_prob_nvp_chains(params, fns_config, base_log_prob_fn, y):
 
 
 if __name__ == "__main__":
-    training_steps = 50001
+    training_steps = 10001
     learning_rate = 1e-2
     params, fns_config = init_nvp_chain(n=4)
     # filenames = []
 
-    def loss(params, batch):
+    def loss(params, batch) -> jnp.float32:
         return -jnp.mean(log_prob_nvp_chains(params, fns_config, log_prob_N01, batch))
 
     @jax.jit
-    def update(params, batch):
+    def update(params, batch) -> Tuple[jnp.float32, List[List[List[jnp.ndarray]]]]:
         nll, grads = jax.value_and_grad(loss)(params, batch)
         params = [
             [
@@ -281,7 +287,7 @@ if __name__ == "__main__":
     for step in range(training_steps):
         nll, params = update(params, next(train_ds))
 
-        if step % 100 == 0:
+        if step % 1000 == 0:
             print(f"Step: {step}; NLL: {nll}")
 
         if step % 5000 == 0:
