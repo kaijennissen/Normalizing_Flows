@@ -264,7 +264,7 @@ if __name__ == "__main__":
     training_steps = 10001
     learning_rate = 1e-2
     params, fns_config = init_nvp_chain(n=4)
-    # filenames = []
+    filenames = []
 
     def loss(params, batch) -> jnp.float32:
         return -jnp.mean(log_prob_nvp_chains(params, fns_config, log_prob_N01, batch))
@@ -290,7 +290,7 @@ if __name__ == "__main__":
         if step % 1000 == 0:
             print(f"Step: {step}; NLL: {nll}")
 
-        if step % 5000 == 0:
+        if (step < 5000) & (step % 250 == 0) or (step >= 5000) & (step % 500 == 0):
 
             key = random.PRNGKey(34)
             x = next(make_dataset_banana(seed=key, batch_size=1000000, num_batches=1))
@@ -298,27 +298,27 @@ if __name__ == "__main__":
                 params, fns_config, sample_N01, 1000000, random.PRNGKey(7809)
             )
             plot_range = np.array([[-4, 8], [-6, 6]])
-            fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+            fig, axes = plt.subplots(1, 2, figsize=(8, 4))
             axes[0].hist2d(x[:, 0], x[:, 1], bins=100, cmap="viridis", range=plot_range)
             axes[1].hist2d(y[:, 0], y[:, 1], bins=100, cmap="viridis", range=plot_range)
             filename = f"plots/banana/real_nvp_banana_{step}.jpg"
             fig.tight_layout()
-            plt.savefig(filename, dpi=150)
-            # filenames.append(filename)
+            plt.savefig(filename, dpi=75)
+            filenames.append(filename)
             plt.close()
 
-    # print("Creating gif\n")
+    print("Creating gif\n")
 
-    # with imageio.get_writer("plots/banana/real_nvp_banana.gif", mode="I") as writer:
-    #     for filename in filenames:
-    #         image = imageio.imread(filename)
-    #         writer.append_data(image)
-    # print("Gif saved\n")
-    # print("Removing Images\n")
-    # # Remove files
-    # for filename in set(filenames):
-    #     os.remove(filename)
-    # print("DONE")
+    with imageio.get_writer("plots/banana/real_nvp_banana.gif", mode="I") as writer:
+        for filename in filenames:
+            image = imageio.imread(filename)
+            writer.append_data(image)
+    print("Gif saved\n")
+    print("Removing Images\n")
+    # Remove files
+    for filename in set(filenames):
+        os.remove(filename)
+    print("DONE")
 
     key = random.PRNGKey(34)
     x = next(make_dataset_banana(seed=key, batch_size=1000000, num_batches=1))
