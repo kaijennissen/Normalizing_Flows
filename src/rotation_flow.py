@@ -49,9 +49,15 @@ Tx = OrthogonalProjection2D(theta=jnp.pi / 4).forward(x)
 
 binrange = jnp.array([[-7, 7], [-7, 7]])
 cm = plt.get_cmap("viridis")
-f, axes = plt.subplots(1, 2, figsize=(12, 6))
+fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 sns.histplot(x=x[:, 0], y=x[:, 1], bins=100, cmap=cm, ax=axes[0], binrange=binrange)
 sns.histplot(x=Tx[:, 0], y=Tx[:, 1], bins=100, cmap=cm, ax=axes[1], binrange=binrange)
+axes[0].set_title("Base Distribution")
+axes[1].set_title("Transformed Distribution")
+for ax in axes:
+    ax.set_xlabel(r"$x_{1}$")
+    ax.set_ylabel(r"$x_{2}$")
+fig.tight_layout()
 plt.savefig("plots/rotation/rotation1.jpg")
 plt.close()
 
@@ -118,10 +124,14 @@ Tx = flow_dist.sample(seed=random.PRNGKey(23), sample_shape=(1000000,))
 
 binrange = jnp.array([[-13, 13], [-7, 13]])
 cm = plt.get_cmap("viridis")
-f, axes = plt.subplots(1, 2, figsize=(12, 6))
+fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 sns.histplot(x=x[:, 0], y=x[:, 1], bins=100, cmap=cm, ax=axes[0], binrange=binrange)
 sns.histplot(x=Tx[:, 0], y=Tx[:, 1], bins=100, cmap=cm, ax=axes[1], binrange=binrange)
+axes[0].set_title("True")
+axes[1].set_title("Learned")
+fig.tight_layout()
 plt.savefig("plots/rotation/rotation2.jpg")
+
 plt.close()
 
 # TODO: learn parameters of rotation with simple jax NN
