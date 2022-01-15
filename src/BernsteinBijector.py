@@ -57,7 +57,7 @@ def get_bernstein_poly_jac(theta):
     return bernstein_poly_jac
 
 
-def constrain_thetas(theta_unconstrained, fn=softplus):
+def constrain_thetas(theta_unconstrained, range_min=None, range_max=None, fn=softplus):
 
     d = jnp.concatenate(
         (
@@ -67,39 +67,57 @@ def constrain_thetas(theta_unconstrained, fn=softplus):
         ),
         axis=-1,
     )
+
     return jnp.cumsum(d[..., 1:], axis=-1)
 
 
 class BernsteinBijector(distrax.Bijector):
-    def __init__(self, thetas):
-        super().__init__(event_ndims_in=0, event_ndims_out=0)
-        self.thetas = thetas
-        self._is_injective = True
+    """Initializes a Bernstein bijector."""
 
-    def _forward(self, x):
+    def __init__(self, thetas):
+        super().__init__(event_ndims_in=0)
+        self.thetas = constrain_thetas(thetas)
+
+    def forward(self, x):
+        """Computes y = f(x)."""
         bernstein_poly = get_bernstein_poly(self.thetas)
         clip = 1e-7
         x = jnp.clip(x, clip, 1.0 - clip)
         return bernstein_poly(x)
 
-    def _forward_log_det(self, x):
+    def forward_log_det_jacobian(self, x):
+        """Computes log|det J(f)(x)|."""
         bernstein_poly = get_bernstein_poly_jac(self.thetas)
         clip = 1e-7
         x = jnp.clip(x, clip, 1.0 - clip)
         return jnp.log(bernstein_poly(x))
 
-    def forward_log_det_jacobian(self, x):
-        return self._forward_log_det(x)
-
-    def inverse(self, x):
+    def inverse(self, y):
+        """Computes x = f^{-1}(y)."""
+        event_shape = self.thetas.shape[:-1]
         n_points = 200
         clip = 1e-7
-        x_fit = jnp.linspace(clip, 1 - clip, n_points)
-        y_fit = self._forward(x_fit)
-        yp = jnp.interp(x, y_fit, x_fit)
-        return yp
+        x_fit = jnp.linspace(clip, 1 - clip, n_points)[..., np.newaxis] * jnp.ones(
+            (1,) + event_shape
+        )
+        y_fit = self.forward(x_fit)
+
+        def inp(y, y_fit, x_fit):
+            return jnp.interp(y, y_fit, x_fit)
+
+        x = jax.vmap(inp, in_axes=-1)(y, y_fit, x_fit)
+        # x_inp = [jnp.interp(y[i], y_fit[:, i], x_fit[:,i]) for i in range(y_fit.shape[-1])]
+        # x = jnp.stack(x_inp, axis=-1)
+        return x
 
     def forward_and_log_det(self, x):
-        y = self._forward(x)
-        logdet = self._forward_log_det(x)
+        """Computes y = f(x) and log|det J(f)(x)|."""
+        y = self.forward(x)
+        logdet = self.forward_log_det_jacobian(x)
+        return y, logdet
+
+    def inverse_and_log_det(self, y):
+        """Computes y = f(x) and log|det J(f)(x)|."""
+        y = self.inverse(y)
+        logdet = 0
         return y, logdet
