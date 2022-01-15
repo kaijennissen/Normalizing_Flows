@@ -1,10 +1,10 @@
 # Normalizing Flows
 
 % # TODO: add table of content
-
 ## Intro
 
 % # TODO: short description of normalizing flows
+![Real NVP Example](./plots/banana/real_nvp_banana.gif)
 
 ## Custom Bijector with distrax
 

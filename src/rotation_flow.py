@@ -123,3 +123,5 @@ sns.histplot(x=x[:, 0], y=x[:, 1], bins=100, cmap=cm, ax=axes[0], binrange=binra
 sns.histplot(x=Tx[:, 0], y=Tx[:, 1], bins=100, cmap=cm, ax=axes[1], binrange=binrange)
 plt.savefig("plots/rotation/rotation2.jpg")
 plt.close()
+
+# TODO: learn parameters of rotation with simple jax NN
