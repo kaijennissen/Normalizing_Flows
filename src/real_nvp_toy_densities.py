@@ -1,5 +1,6 @@
 import argparse
 from typing import Any, Mapping, Sequence, Tuple
+from webbrowser import get
 
 import distrax
 import haiku as hk
@@ -13,6 +14,7 @@ from tensorflow_probability.substrates import jax as tfp
 
 from densities.banana import make_dataset_banana
 from densities.energies import (
+    energy_1_pdf,
     make_dataset_energy_1,
     make_dataset_energy_2,
     make_dataset_energy_3,
@@ -32,7 +34,6 @@ OptState = Any
 FLOW_NUM_LAYERS = 8
 HIDDEN_SIZE = 64
 MLP_NUM_LAYERS = 2
-FLOW_NUM_PARAMS = 12
 
 
 def get_density(density):
@@ -61,11 +62,11 @@ def make_conditioner(
             hk.Flatten(preserve_dims=-1),
             hk.nets.MLP(hidden_sizes, activate_final=True),
             hk.Linear(
-                np.prod(event_shape) * num_bijector_params,
+                num_bijector_params,
                 w_init=jnp.zeros,
                 b_init=jnp.zeros,
             ),
-            hk.Reshape(tuple(event_shape) + (num_bijector_params,), preserve_dims=-1),
+            hk.Reshape((num_bijector_params,), preserve_dims=-1),
         ]
     )
 
@@ -74,17 +75,15 @@ def make_flow_model(
     event_shape: Sequence[int],
     num_layers: int,
     hidden_sizes: Sequence[int],
-    flow_num_params: int,
 ) -> distrax.Transformed:
 
     mask = jnp.arange(0, np.prod(event_shape)) % 2  # every second element is masked
     mask = jnp.reshape(mask, event_shape)
     mask = mask.astype(bool)
 
-    flow_num_params = 3 * flow_num_params + 1
-
     def bijector_fn(params: Array):
-        return distrax.RationalQuadraticSpline(params, range_min=-8.0, range_max=8.0)
+        shift, log_scale = jnp.split(params, 2, axis=-1)
+        return distrax.ScalarAffine(shift=shift, log_scale=log_scale)
 
     layers = []
     for _ in range(num_layers):
@@ -94,7 +93,7 @@ def make_flow_model(
             conditioner=make_conditioner(
                 event_shape=event_shape,
                 hidden_sizes=hidden_sizes,
-                num_bijector_params=flow_num_params,
+                num_bijector_params=2,
             ),
         )
 
@@ -119,7 +118,6 @@ def log_prob(data: Array) -> Array:
         event_shape=data.shape[-1:],
         num_layers=FLOW_NUM_LAYERS,
         hidden_sizes=[HIDDEN_SIZE] * MLP_NUM_LAYERS,
-        flow_num_params=FLOW_NUM_PARAMS,  # num_bins / bernstein_order
     )
 
     return model.log_prob(data)
@@ -133,7 +131,6 @@ def sample(event_shape: Tuple, prng_key: PRNGKey, num_samples: int):  # type: ig
         event_shape=event_shape,
         num_layers=FLOW_NUM_LAYERS,
         hidden_sizes=[HIDDEN_SIZE] * MLP_NUM_LAYERS,
-        flow_num_params=FLOW_NUM_PARAMS,  # num_bins / bernstein_order
     )
 
     return model.sample(seed=prng_key, sample_shape=(num_samples,))
@@ -193,12 +190,12 @@ def main(
             train_loss = eval_fn(params, next(train_ds))
             val_loss = eval_fn(params, next(valid_ds))
             print(
-                f"STEP: {step}; training loss: {train_loss}, validation loss: {val_loss}"
+                f"{density} STEP: {step}; training loss: {train_loss}, validation loss: {val_loss}"
             )
 
     # Evaluate
     N = 1000000
-    samples_maf = sample.apply(
+    samples = sample.apply(
         params=params,
         prng_key=next(prng_seq),
         event_shape=(2,),
@@ -207,15 +204,31 @@ def main(
 
     # make plots
     plot_range = np.array([[-4, 4], [-4, 4]])
-    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    figsize = (8, 8)
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
 
-    ax.hist2d(samples_maf[:, 0], samples_maf[:, 1], bins=100, range=plot_range)
-    ax.set_title("MAF")
+    ax.hist2d(samples[:, 0], samples[:, 1], bins=100, range=plot_range)
+    ax.set_title("Real NVP")
     ax.set_xlabel(r"$x_{1}$")
     ax.set_ylabel(r"$x_{2}$")
 
     fig.tight_layout()
-    plt.savefig(f"./plots/{density}/maf_{density}.jpg", dpi=750)
+    plt.savefig(f"./plots/{density}/real_nvp_{density}.jpg", dpi=750)
+
+    # num_points = 2000
+    # x1 = jnp.linspace(-4, 4, num_points)
+    # x2 = jnp.linspace(-4, 4, num_points)
+    # X1, X2 = jnp.meshgrid(x1, x2)
+
+    # # pdf values of true and learned distribution
+    # X1X2 = jnp.stack([X1, X2], axis=-1)
+    # Z1 = dataset_pdf(X1X2)
+    # Z2 = jnp.exp(log_prob.apply(params, X1X2))
+
+    # fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    # # axes[0].contourf(X1, X2, Z1, cmap="viridis")
+    # axes[1].contourf(X1, X2, Z2, cmap="viridis")
+    # plt.savefig(f"plots/{DENSITY}/{DENSITY}_pdf.jpg", dpi=600)
 
 
 if __name__ == "__main__":
@@ -237,12 +250,6 @@ if __name__ == "__main__":
         default=50,
         type=int,
         help="Hidden size of the MLP conditioner.",
-    )
-    parser.add_argument(
-        "--flow_num_params",
-        default=4,
-        type=int,
-        help="Order of the Bernstein-Polynomial.",
     )
     parser.add_argument(
         "--batch-size",

@@ -128,50 +128,71 @@ def make_dataset_energy_4(seed: int, batch_size: int = 8, num_batches: int = 1):
 
 
 if __name__ == "__main__":
-    # plot samples
-    DENSITY_NAME = "energy1"
-    samples = next(make_dataset_energy_1(seed=15, batch_size=1000000))
-    plt.hist2d(
-        x=samples[:, 0],
-        y=samples[:, 1],
-        bins=100,
-        range=np.array([[-4, 4], [-4, 4]]),
-        cmap="viridis",
-    )
-    plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=600)
 
+    plot_range = np.array([[-4, 4], [-4, 4]])
+    figsize = (8, 8)
     # plot samples
-    DENSITY_NAME = "energy2"
-    samples = next(make_dataset_energy_2(seed=67, batch_size=1000000))
-    plt.hist2d(
-        x=samples[:, 0],
-        y=samples[:, 1],
-        bins=100,
-        range=np.array([[-4, 4], [-4, 4]]),
-        cmap="viridis",
-    )
-    plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=600)
+    densities = [
+        make_dataset_energy_1,
+        make_dataset_energy_2,
+        make_dataset_energy_3,
+        make_dataset_energy_4,
+    ]
+    for i, fn in enumerate(densities, start=1):
+        DENSITY_NAME = f"energy{i}"
+        samples = next(fn(seed=15, batch_size=1000000))
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        ax.hist2d(
+            x=samples[:, 0],
+            y=samples[:, 1],
+            bins=100,
+            range=plot_range,
+            cmap="viridis",
+        )
+        ax.set_xlabel(r"$x_{1}$")
+        ax.set_ylabel(r"$x_{2}$")
+        ax.set_title("True")
+        fig.tight_layout()
+        plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=750)
 
-    # plot samples
-    DENSITY_NAME = "energy3"
-    samples = next(make_dataset_energy_3(seed=45, batch_size=1000000))
-    plt.hist2d(
-        x=samples[:, 0],
-        y=samples[:, 1],
-        bins=100,
-        range=np.array([[-4, 4], [-4, 4]]),
-        cmap="viridis",
-    )
-    plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=600)
+    # # plot samples
+    # DENSITY_NAME = "energy2"
+    # samples = next(make_dataset_energy_2(seed=67, batch_size=1000000))
+    # fig, ax = plt.subplots(1, 1, figsize=figsize)
+    # plt.hist2d(
+    #     x=samples[:, 0],
+    #     y=samples[:, 1],
+    #     bins=100,
+    #     range=plot_range,
+    #     cmap="viridis",
+    # )
+    # plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=600)
 
-    # plot samples
-    DENSITY_NAME = "energy4"
-    samples = next(make_dataset_energy_4(seed=21, batch_size=1000000))
-    plt.hist2d(
-        x=samples[:, 0],
-        y=samples[:, 1],
-        bins=100,
-        range=np.array([[-4, 4], [-4, 4]]),
-        cmap="viridis",
-    )
-    plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=600)
+    # # plot samples
+    # DENSITY_NAME = "energy3"
+    # samples = next(make_dataset_energy_3(seed=45, batch_size=1000000))
+    # fig, ax = plt.subplots(1, 1, figsize=figsize)
+    # plt.hist2d(
+    #     x=samples[:, 0],
+    #     y=samples[:, 1],
+    #     bins=100,
+    #     range=plot_range,
+    #     cmap="viridis",
+    # )
+    # plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=600)
+
+    # # plot samples
+    # DENSITY_NAME = "energy4"
+    # samples = next(make_dataset_energy_4(seed=21, batch_size=1000000))
+    # fig, ax = plt.subplots(1, 1, figsize=figsize)
+    # plt.hist2d(
+    #     x=samples[:, 0],
+    #     y=samples[:, 1],
+    #     bins=100,
+    #     range=plot_range,
+    #     cmap="viridis",
+    # )
+    # ax.set_xlabel(r"$x_{1}$")
+    # ax.set_ylabel(r"$x_{2}$")
+    # ax.set_table("True")
+    # plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=600)

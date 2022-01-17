@@ -78,13 +78,18 @@ if __name__ == "__main__":
     # plot samples
     key = PRNGKey(254)
     samples = next(make_dataset_banana(seed=45, batch_size=1000000))
-
-    # plt.hist2d(
-    #     x=samples[:, 0],
-    #     y=samples[:, 1],
-    #     bins=100,
-    #     range=np.array([[-4, 4], [-4, 4]]),
-    #     cmap="viridis",
-    # )
-
-    plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_hex_samples.jpg")
+    plot_range = np.array([[-4, 4], [-4, 4]])
+    figsize = (8, 8)
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    ax.hist2d(
+        x=samples[:, 0],
+        y=samples[:, 1],
+        bins=100,
+        range=plot_range,
+        cmap="viridis",
+    )
+    ax.set_xlabel(r"$x_{1}$")
+    ax.set_ylabel(r"$x_{2}$")
+    ax.set_title("True")
+    fig.tight_layout()
+    plt.savefig(f"./plots/{DENSITY_NAME}/{DENSITY_NAME}_samples.jpg", dpi=750)

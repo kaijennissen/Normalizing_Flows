@@ -11,9 +11,32 @@ from jax.random import KeyArray
 from tensorflow_probability.substrates import jax as tfp
 
 from densities.banana import make_dataset_banana
+from densities.energies import (
+    make_dataset_energy_1,
+    make_dataset_energy_2,
+    make_dataset_energy_3,
+    make_dataset_energy_4,
+)
+from densities.gaussian_blobs import make_dataset_gaussian_blobs
 
 tfd = tfp.distributions
 tfb = tfp.bijectors
+
+DENSITY = "energy2"
+
+
+if DENSITY == "banana":
+    make_dataset = make_dataset_banana
+elif DENSITY == "gaussian_blobs":
+    make_dataset = make_dataset_gaussian_blobs
+elif DENSITY == "energy1":
+    make_dataset = make_dataset_energy_1
+elif DENSITY == "energy2":
+    make_dataset = make_dataset_energy_2
+elif DENSITY == "energy3":
+    make_dataset = make_dataset_energy_3
+elif DENSITY == "energy4":
+    make_dataset = make_dataset_energy_4
 
 
 def sample_N01(N: int, seed: KeyArray) -> jnp.ndarray:
@@ -261,10 +284,10 @@ def log_prob_nvp_chains(params, fns_config, base_log_prob_fn, y) -> jnp.ndarray:
 
 
 if __name__ == "__main__":
-    training_steps = 10001
+    training_steps = 50001
     learning_rate = 1e-2
-    params, fns_config = init_nvp_chain(n=4)
-    filenames = []
+    params, fns_config = init_nvp_chain(n=8)
+    # filenames = []
 
     def loss(params, batch) -> jnp.float32:
         return -jnp.mean(log_prob_nvp_chains(params, fns_config, log_prob_N01, batch))
@@ -282,7 +305,7 @@ if __name__ == "__main__":
         return nll, params
 
     # Training
-    train_ds = make_dataset_banana(seed=231, batch_size=128, num_batches=training_steps)
+    train_ds = make_dataset(seed=231, batch_size=128, num_batches=training_steps)
 
     for step in range(training_steps):
         nll, params = update(params, next(train_ds))
@@ -290,43 +313,47 @@ if __name__ == "__main__":
         if step % 1000 == 0:
             print(f"Step: {step}; NLL: {nll}")
 
-        if (step < 5000) & (step % 250 == 0) or (step >= 5000) & (step % 500 == 0):
+        if step % 2500 == 0:
 
             key = random.PRNGKey(34)
-            x = next(make_dataset_banana(seed=key, batch_size=1000000, num_batches=1))
+            x = next(make_dataset(seed=key, batch_size=1000000, num_batches=1))
             y = sample_nvp_chain(
                 params, fns_config, sample_N01, 1000000, random.PRNGKey(7809)
             )
-            plot_range = np.array([[-4, 8], [-6, 6]])
+            plot_range = np.array([[-4, 4], [-4, 4]])
             fig, axes = plt.subplots(1, 2, figsize=(8, 4))
             axes[0].hist2d(x[:, 0], x[:, 1], bins=100, cmap="viridis", range=plot_range)
             axes[1].hist2d(y[:, 0], y[:, 1], bins=100, cmap="viridis", range=plot_range)
-            filename = f"plots/banana/real_nvp_banana_{step}.jpg"
+            filename = f"plots/{DENSITY}/real_nvp_{DENSITY}_{step}.jpg"
             fig.tight_layout()
             plt.savefig(filename, dpi=75)
-            filenames.append(filename)
             plt.close()
 
-    print("Creating gif\n")
+    # print("Creating gif\n")
 
-    with imageio.get_writer("plots/banana/real_nvp_banana.gif", mode="I") as writer:
-        for filename in filenames:
-            image = imageio.imread(filename)
-            writer.append_data(image)
-    print("Gif saved\n")
-    print("Removing Images\n")
-    # Remove files
-    for filename in set(filenames):
-        os.remove(filename)
-    print("DONE")
+    # with imageio.get_writer(
+    #     "plots/{DENSITY}/real_nvp_{DENSITY}.gif", mode="I"
+    # ) as writer:
+    #     for filename in filenames:
+    #         image = imageio.imread(filename)
+    #         writer.append_data(image)
+    # print("Gif saved\n")
+    # print("Removing Images\n")
+    # # Remove files
+    # for filename in set(filenames):
+    #     os.remove(filename)
+    # print("DONE")
 
     key = random.PRNGKey(34)
-    x = next(make_dataset_banana(seed=key, batch_size=1000000, num_batches=1))
+    x = next(make_dataset(seed=key, batch_size=1000000, num_batches=1))
     y = sample_nvp_chain(params, fns_config, sample_N01, 1000000, random.PRNGKey(7809))
-    plot_range = np.array([[-4, 8], [-6, 6]])
-    fig, axes = plt.subplots(1, 2, figsize=(12, 8))
-    axes[0].hist2d(x[:, 0], x[:, 1], bins=100, cmap="viridis", range=plot_range)
-    axes[1].hist2d(y[:, 0], y[:, 1], bins=100, cmap="viridis", range=plot_range)
+    plot_range = np.array([[-4, 4], [-4, 4]])
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    # axes[0].hist2d(x[:, 0], x[:, 1], bins=100, cmap="viridis", range=plot_range)
+    ax.hist2d(y[:, 0], y[:, 1], bins=100, cmap="viridis", range=plot_range)
+    ax.set_xlabel(r"$x_{1}$")
+    ax.set_ylabel(r"$x_{2}$")
+    ax.set_title("Real NVP")
     fig.tight_layout()
-    plt.savefig(f"plots/banana/real_nvp_banana.jpg", dpi=750)
+    plt.savefig(f"plots/{DENSITY}/real_nvp_{DENSITY}.jpg", dpi=750)
     plt.close()

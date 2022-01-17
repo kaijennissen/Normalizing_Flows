@@ -85,14 +85,16 @@ On the left hand side the true distribution is depicted and on the right hand si
 
 ## MAF & Real NVP & Glow
 
-### samples from some toy densities (left) and sampels from the inferred distribution (right)
+### samples from toy densities (left) and the inferred distribution with MAF (middle) and Real NVP (right)
 
-![MAF](./plots/banana/maf_banana.jpg)
-![MAF](./plots/gaussian_blobs/maf_gaussian_blobs.jpg)
-![MAF](./plots/energy1/maf_energy1.jpg)
-![MAF](./plots/energy2/maf_energy2.jpg)
-![MAF](./plots/energy3/maf_energy3.jpg)
-![MAF](./plots/energy4/maf_energy4.jpg)
+|                           True                            |                          MAF                          |                          Real NVP                          |
+| :-------------------------------------------------------: | :---------------------------------------------------: | :--------------------------------------------------------: |
+|         ![MAF](./plots/banana/banana_samples.jpg)         |         ![MAF](./plots/banana/maf_banana.jpg)         |         ![MAF](./plots/banana/real_nvp_banana.jpg)         |
+| ![MAF](./plots/gaussian_blobs/gaussian_blobs_samples.jpg) | ![MAF](./plots/gaussian_blobs/maf_gaussian_blobs.jpg) | ![MAF](./plots/gaussian_blobs/real_nvp_gaussian_blobs.jpg) |
+|        ![MAF](./plots/energy1/energy1_samples.jpg)        |        ![MAF](./plots/energy1/maf_energy1.jpg)        |        ![MAF](./plots/energy1/real_nvp_energy1.jpg)        |
+|        ![MAF](./plots/energy2/energy2_samples.jpg)        |        ![MAF](./plots/energy2/maf_energy2.jpg)        |        ![MAF](./plots/energy2/real_nvp_energy2.jpg)        |
+|        ![MAF](./plots/energy3/energy3_samples.jpg)        |        ![MAF](./plots/energy3/maf_energy3.jpg)        |        ![MAF](./plots/energy3/real_nvp_energy3.jpg)        |
+|        ![MAF](./plots/energy4/energy4_samples.jpg)        |        ![MAF](./plots/energy4/maf_energy4.jpg)        |        ![MAF](./plots/energy4/real_nvp_energy4.jpg)        |
 
 ## Bernstein Flows
 
@@ -105,6 +107,8 @@ On the left hand side the true distribution is depicted and on the right hand si
 ![Bernstein Flow](./plots/MVN_3D.jpg)
 
 ## Multiplicative Normalizing Flows
+
+## HINT: Hierarchical Invertible Neural Transport
 
 ## Reference
 
