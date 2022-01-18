@@ -8,39 +8,20 @@ Example of a normalizing flow (Real NVP) learning the distribution on the left.
 > Normalizing flows operate by pushing a simple density through a series of transformations to produce a richer, potentially more multi-modal distribution.
 > -- <cite>Papamakarios et al. 2021 </cite>
 
-These transformations $T$ have to be bijective, differentiable with a differentible inverse $T^{-1}$ and a functional determinant $det(T^{-1})\neq 0$, in short T is a diffeomorphism (Note that in the NF literature the terms `Bijector` and `diffeomorphism` are used interchangably).
+These transformations <img src="https://latex.codecogs.com/svg.image?T" title="T" /> have to be bijective, differentiable with a differentible inverse <img src="https://latex.codecogs.com/svg.image?T^{-1}" title="T" /> and a functional determinant<img src="https://latex.codecogs.com/svg.image?det(T^{-1})\neq&space;0" title="det(T^{-1})\neq 0" />, in short <img src="https://latex.codecogs.com/svg.image?T" title="T" /> is a diffeomorphism (Note that in the NF literature the terms `Bijector` and `diffeomorphism` are used interchangably).
 
 ## Building a custom Bijector with distrax
 
-We start with a linear map $T$ given by:
+We start with a linear map <img src="https://latex.codecogs.com/svg.image?T" title="T" /> given by:
 
-$T:\mathbb{R^{2}} \rightarrow \mathbb{R^{2}}, \left(\begin{array}{c}
- x_{1}\\
- x_{2}
- \end{array}\right) \mapsto \left(\begin{array}{cc}
- cos(\theta) &-sin(\theta)\\
- sin(\theta) & cos(\theta)
- \end{array}\right) \left(\begin{array}{c}
- x_{1}\\
- x_{2}
- \end{array}\right)
-$
+<img src="https://latex.codecogs.com/svg.image?T:\mathbb{R}^{2}&space;\rightarrow&space;\mathbb{R}^{2},&space;\left(\begin{array}{c}&space;x_{1}\\&space;x_{2}&space;\end{array}\right)&space;\mapsto&space;\left(\begin{array}{cc}&space;cos(\theta)&space;&-sin(\theta)\\&space;sin(\theta)&space;&&space;cos(\theta)&space;\end{array}\right)&space;\left(\begin{array}{c}&space;x_{1}\\&space;x_{2}&space;\end{array}\right)&space;&space;" title="T:\mathbb{R}^{2} \rightarrow \mathbb{R}^{2}, \left(\begin{array}{c} x_{1}\\ x_{2} \end{array}\right) \mapsto \left(\begin{array}{cc} cos(\theta) &-sin(\theta)\\ sin(\theta) & cos(\theta) \end{array}\right) \left(\begin{array}{c} x_{1}\\ x_{2} \end{array}\right) " />
 
-with inverse $T^{-1}$ :
+with inverse <img src="https://latex.codecogs.com/svg.image?T^{-1}" title="T^{-1}" /> :
 
-$T^{-1}:\mathbb{R^{2}} \rightarrow \mathbb{R^{2}}, \left(\begin{array}{c}
- x_{1}\\
- x_{2}
- \end{array}\right) \mapsto \left(\begin{array}{cc}
- cos(\theta) &sin(\theta)\\
- -sin(\theta) & cos(\theta)
- \end{array}\right) \left(\begin{array}{c}
- x_{1}\\
- x_{2}
- \end{array}\right)
-$
+<img src="https://latex.codecogs.com/svg.image?T^{-1}:\mathbb{R}^{2}&space;\rightarrow&space;\mathbb{R}^{2},&space;\left(\begin{array}{c}&space;x_{1}\\&space;x_{2}&space;\end{array}\right)&space;\mapsto&space;\left(\begin{array}{cc}&space;cos(\theta)&space;&sin(\theta)\\&space;-sin(\theta)&space;&&space;cos(\theta)&space;\end{array}\right)&space;\left(\begin{array}{c}&space;x_{1}\\&space;x_{2}&space;\end{array}\right)" title="T^{-1}:\mathbb{R}^{2} \rightarrow \mathbb{R}^{2}, \left(\begin{array}{c} x_{1}\\ x_{2} \end{array}\right) \mapsto \left(\begin{array}{cc} cos(\theta) &sin(\theta)\\ -sin(\theta) & cos(\theta) \end{array}\right) \left(\begin{array}{c} x_{1}\\ x_{2} \end{array}\right)" />
 
-and functional determinant $det( T^{'} )=sin^{2}(\theta)+cos^{2}(\theta)=1$.
+
+and functional determinant <img src="https://latex.codecogs.com/svg.image?det(T^{'})=sin^{2}(\theta)&plus;cos^{2}(\theta)=1" title="det(T^{'})=sin^{2}(\theta)+cos^{2}(\theta)=1" />  .
 
 In [distrax](https://github.com/deepmind/distrax) we can construct the above map by subclassing the `Bijector` class.
 
@@ -75,9 +56,9 @@ class OrthogonalProjection2D(distrax.Bijector):
         return y, logdet
 ```
 
-Transforming an independent multivariate Gaussian distribution $X$ with the `OrthogonalProjection2D` for $\theta =\frac{\pi}{4}= 45^{\circ}$ yields a multivariate Gaussian distribution $Y$ which is no longer independent, as can be seen below:
+Transforming an independent multivariate Gaussian distribution <img src="https://latex.codecogs.com/svg.image?X" title="\Sigma=cov(X)" /> with the `OrthogonalProjection2D` for <img src="https://latex.codecogs.com/svg.image?\theta=45^{\circ}" title="\theta=45^{\circ}" /> yields a multivariate Gaussian distribution <img src="https://latex.codecogs.com/svg.image?Y" title="T" /> which is no longer independent, as can be seen below:
 ![Rotation Bijector](./plots/rotation/rotation1.jpg)
-Since the above bijector is linear we already knew that $cov(Y)=cov(TX)=T\Sigma T^{'}$ where $\Sigma=cov(X)$.
+Since the above bijector is linear we already knew that <img src="https://latex.codecogs.com/svg.image?cov(Y)=cov(TX)=T\Sigma&space;T^{'}" title="cov(Y)=cov(TX)=T\Sigma T^{'}" /> where <img src="https://latex.codecogs.com/svg.image?\Sigma=cov(X)" title="\Sigma=cov(X)" />.
 
 In the image below we chained shift, scale and the Orthogonal Projector.
 On the left hand side the true distribution is depicted and on the right hand side the inferred ditribution using maximum likelihood for the shift parameter $a$, the scale parameter $b$ and the rotation parameter $\theta$:
