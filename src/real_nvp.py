@@ -293,22 +293,23 @@ if __name__ == "__main__":
         return -jnp.mean(log_prob_nvp_chains(params, fns_config, log_prob_N01, batch))
 
     @jax.jit
-    def update(params, batch) -> Tuple[jnp.float32, List[List[List[jnp.ndarray]]]]:
+    def sgd_update(params, batch) -> Tuple[jnp.float32, List[List[List[jnp.ndarray]]]]:
         nll, grads = jax.value_and_grad(loss)(params, batch)
-        params = [
-            [
-                [W - learning_rate * dW, b - learning_rate * db]
-                for (W, b), (dW, db) in zip(net_params, net_grads)
-            ]
-            for net_params, net_grads in zip(params, grads)
-        ]
+        params = jax.tree_multimap(lambda p, g: p - learning_rate * g, params, grads)
+        # params = [
+        #     [
+        #         [W - learning_rate * dW, b - learning_rate * db]
+        #         for (W, b), (dW, db) in zip(net_params, net_grads)
+        #     ]
+        #     for net_params, net_grads in zip(params, grads)
+        # ]
         return nll, params
 
     # Training
     train_ds = make_dataset(seed=231, batch_size=128, num_batches=training_steps)
 
     for step in range(training_steps):
-        nll, params = update(params, next(train_ds))
+        nll, params = sgd_update(params, next(train_ds))
 
         if step % 1000 == 0:
             print(f"Step: {step}; NLL: {nll}")
